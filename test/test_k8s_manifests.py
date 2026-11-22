@@ -201,3 +201,65 @@ def test_render_rejects_a_non_sha_tag() -> None:
         timeout=60,
     )
     assert result.returncode != 0 and "tag must be a git SHA" in result.stderr
+
+
+# --- the runner's deploy identity (k8s/cluster/deployer.yaml) -------------------------------
+
+
+def _deployer() -> list[dict[str, Any]]:
+    text = (REPO_ROOT / "k8s/cluster/deployer.yaml").read_text()
+    return [d for d in yaml.safe_load_all(text) if d]
+
+
+def test_deployer_is_bound_only_inside_the_lab_namespaces() -> None:
+    docs = _deployer()
+    bindings = [d for d in docs if d["kind"] == "RoleBinding"]
+    assert {b["metadata"]["namespace"] for b in bindings} == set(ENVIRONMENTS.values())
+    cluster_bindings = [d for d in docs if d["kind"] == "ClusterRoleBinding"]
+    assert [b["roleRef"]["name"] for b in cluster_bindings] == ["ai-lab-deployer-read"]
+
+
+def test_deployer_has_no_wildcards_and_reads_only_cluster_wide() -> None:
+    roles = {d["metadata"]["name"]: d for d in _deployer() if d["kind"] == "ClusterRole"}
+    for role in roles.values():
+        for rule in role["rules"]:
+            assert "*" not in rule["verbs"] and "*" not in rule["resources"]
+            assert "*" not in rule["apiGroups"]
+    for rule in roles["ai-lab-deployer-read"]["rules"]:
+        assert set(rule["verbs"]) <= {"get", "list"}  # cluster-scoped access is read-only
+
+
+def test_deployer_cannot_change_secrets_or_escalate() -> None:
+    roles = [d for d in _deployer() if d["kind"] == "ClusterRole"]
+    for role in roles:
+        for rule in role["rules"]:
+            if "secrets" in rule["resources"]:
+                assert rule["verbs"] == ["get"] and rule["resourceNames"] == ["lab-secrets"]
+            assert not {"roles", "rolebindings", "clusterroles", "clusterrolebindings"} & set(
+                rule["resources"]
+            )
+            assert not {"escalate", "bind", "impersonate"} & set(rule["verbs"])
+
+
+def test_deployer_can_do_everything_deploy_applies() -> None:
+    """Every kind in the rendered manifests must be writable by the deployer, or deploys fail."""
+    resource_of = {
+        "Service": "services",
+        "ConfigMap": "configmaps",
+        "PersistentVolumeClaim": "persistentvolumeclaims",
+        "ResourceQuota": "resourcequotas",
+        "LimitRange": "limitranges",
+        "Deployment": "deployments",
+        "StatefulSet": "statefulsets",
+        "CronJob": "cronjobs",
+        "NetworkPolicy": "networkpolicies",
+    }
+    role = next(d for d in _deployer() if d["metadata"]["name"] == "ai-lab-deployer")
+    writable = {
+        res
+        for rule in role["rules"]
+        if {"create", "patch"} <= set(rule["verbs"])
+        for res in rule["resources"]
+    }
+    kinds = {d["kind"] for env in ENVIRONMENTS for d in render(env)}
+    assert {resource_of[k] for k in kinds} <= writable, kinds

@@ -1,0 +1,73 @@
+#!/usr/bin/python3 -I
+"""Root-owned helper: the ONLY privileged operation the lab's runner may perform (via sudo).
+
+Installed by the owner as /usr/local/sbin/ai-lab-image (root:root, 0755) and allowed in sudoers
+for the runner user. It refuses any image that is not a lab image, so the runner can never
+replace the other project's images in k3s.
+
+    podman save IMAGE | sudo ai-lab-image import     # import a lab image archive into k3s
+    sudo ai-lab-image rm localhost/ai-lab-api:<sha>  # remove an old lab image from k3s
+"""
+
+import json
+import re
+import subprocess
+import sys
+import tarfile
+import tempfile
+
+K3S = "/usr/local/bin/k3s"
+ALLOWED = re.compile(r"^localhost/ai-lab-(api|frontend):[0-9a-f]{40}$")
+MAX_BYTES = 8 * 1024**3
+
+
+def fail(message: str) -> None:
+    sys.exit(f"ai-lab-image: {message}")
+
+
+def archive_tags(path: str) -> list[str]:
+    """RepoTags from a docker-archive (`podman save` default format)."""
+    with tarfile.open(path) as tar:
+        try:
+            member = tar.extractfile("manifest.json")
+        except KeyError:
+            fail("not a docker-archive (no manifest.json)")
+        if member is None:
+            fail("manifest.json is not a file")
+        manifest = json.load(member)
+    return [tag for entry in manifest for tag in (entry.get("RepoTags") or [])]
+
+
+def do_import() -> None:
+    with tempfile.NamedTemporaryFile(prefix="ai-lab-image-", suffix=".tar") as tmp:
+        size = 0
+        while chunk := sys.stdin.buffer.read(1 << 20):
+            size += len(chunk)
+            if size > MAX_BYTES:
+                fail("archive too large")
+            tmp.write(chunk)
+        tmp.flush()
+        tags = archive_tags(tmp.name)
+        if not tags:
+            fail("archive contains no tagged image")
+        for tag in tags:
+            if not ALLOWED.match(tag):
+                fail(f"refusing to import {tag!r}: only localhost/ai-lab-{{api,frontend}}:<sha>")
+        subprocess.run([K3S, "ctr", "-n", "k8s.io", "images", "import", tmp.name], check=True)
+        print("imported: " + ", ".join(tags))
+
+
+def do_rm(ref: str) -> None:
+    if not ALLOWED.match(ref):
+        fail(f"refusing to remove {ref!r}: not a lab image")
+    subprocess.run([K3S, "ctr", "-n", "k8s.io", "images", "rm", ref], check=True)
+
+
+if __name__ == "__main__":
+    args = sys.argv[1:]
+    if args == ["import"]:
+        do_import()
+    elif len(args) == 2 and args[0] == "rm":
+        do_rm(args[1])
+    else:
+        fail("usage: ai-lab-image import < archive.tar | ai-lab-image rm <lab-image-ref>")

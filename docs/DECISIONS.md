@@ -26,6 +26,7 @@
 | U-8 | **Models (from D-05):** start with **Ollama**, possibly mixed with external providers later. External providers stay disabled until providers, data-sharing rules and budgets are chosen. |
 | U-9 | **Dashboard access (from D-06):** the recommended option (Tailscale, no public exposure) is acceptable. *(Interpreted from the answer "can be no prob"; please correct if a different option was meant.)* |
 | U-10 | **Source control and builds (from D-07):** GitHub hosting and the sibling project's build path (podman on the server → k3s import). *(Verified: a self-hosted runner is installed on the server for the other repository, but that repository has no workflow files yet. For the lab see D-07b.)* |
+| U-13 | **No CI tests on push (for now).** Tests run on the laptop before every push; the lab's runner only deploys. (Owner decision, 2026-11-22.) |
 | U-12 | **The server `alpha` is the owner's own machine** (confirmed 2026-11-22; resolves D-14 ownership). |
 | U-11 | **Hosted tracing (from D-08):** disabled, as recommended. No LangSmith or other hosted tracing; prompts and research content stay on the server. *(Interpreted from "ok".)* |
 
@@ -161,7 +162,7 @@ This needs the user's acceptance for copyright reasons.
 Inspection ran as the owner running reviewed read-only commands. For deployment the lab uses a
 deploy identity limited to the `ai-lab*` namespaces (see D-07b).
 
-### D-07b — Lab CI/CD runner · APPROVED (after the first manual deploy)
+### D-07b — Lab CI/CD runner · APPROVED, implemented (setup is runbook step 10)
 The installed runner is registered to `agentic-trading-intelligence-platform` only. It runs as
 `damian`, which holds a cluster-admin kubeconfig. A runner for one personal-account repository
 cannot serve another repository.
@@ -226,6 +227,9 @@ them changes the approved architecture.
 | I-12 | Lab volumes are **static local PersistentVolumes**, each pre-bound to one claim, on `/srv/ai-lab`; k3s's local-path provisioner is left untouched | k3s reapplies its bundled manifests on restart, so its configuration must not be edited; pre-binding keeps lab data off the root filesystem |
 | I-13 | Database passwords are generated on the server by `scripts/server/create-secrets.sh`; no secret file exists in git, not even as a template with values | nothing to leak or commit by mistake |
 | I-14 | Phase 1 pods have **no internet egress** | nothing in Phase 1 needs it; egress to model and source APIs is opened per component when it is built (Phases 3–4) |
+| I-15 | The runner's only root privilege is `/usr/local/sbin/ai-lab-image`, which inspects each image archive and imports or removes only `localhost/ai-lab-{api,frontend}:<sha>` | a plain sudo rule for `k3s ctr` would let a crafted archive replace the other project's images |
+| I-16 | Production deploys are a **manual workflow run** (`workflow_dispatch`), not a GitHub "environment" with required reviewers | required reviewers on private repositories need a paid GitHub plan; the manual trigger gives the same control for free, and `deploy.sh` still requires the commit to be verified on staging |
+| I-17 | The runner's kubeconfig uses the `lab-deployer` ServiceAccount: write access to lab objects in the two lab namespaces, read-only on three cluster objects, no RBAC changes, Secrets limited to an existence check of `lab-secrets` | least privilege; unlike the existing runner, it cannot affect the other project |
 
 ---
 

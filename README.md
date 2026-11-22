@@ -60,3 +60,6 @@ and the step-by-step [server runbook](docs/operations/SERVER_SETUP.md).
 scripts/deploy.sh render staging <git-sha>   # preview the manifests (works on the laptop)
 scripts/deploy.sh deploy staging             # on the server: build, import, apply, verify
 ```
+
+Once the lab's runner is set up (runbook step 10), a push to `main` deploys to staging automatically.
+There are no CI tests: **run the test suite locally before every push.**

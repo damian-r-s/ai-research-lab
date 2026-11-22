@@ -1,0 +1,48 @@
+# Deployment only (tests run locally before pushing; see README). Runs on the lab's OWN
+# self-hosted runner on the server, under a low-privilege user whose kubeconfig can touch only the
+# ai-lab and ai-lab-staging namespaces (k8s/cluster/deployer.yaml, DECISIONS D-07b).
+#
+# - push to main      -> deploy that commit to staging
+# - manual run (prod) -> deploy a commit to production; deploy.sh refuses commits not verified on
+#                        staging first and takes a database backup before applying anything
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        options: [staging, prod]
+        default: staging
+      ref:
+        description: Commit SHA to deploy (empty = head of the selected branch)
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy  # one deployment at a time; never cancel one half-way
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, linux, ai-research-lab]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Deploy
+        # Inputs are passed through the environment, never interpolated into the script
+        # (prevents script injection through workflow inputs).
+        env:
+          TARGET_ENV: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'staging' }}
+          TARGET_REF: ${{ inputs.ref || github.sha }}
+        run: |
+          export KUBECONFIG="$HOME/.kube/lab-deployer.conf"
+          scripts/deploy.sh deploy "$TARGET_ENV" "$TARGET_REF"

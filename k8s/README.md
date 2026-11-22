@@ -4,7 +4,7 @@ Kustomize layout (rendered with `kubectl kustomize`, which is built into kubectl
 
 | Path | What | Applied by |
 |---|---|---|
-| `cluster/` | the two namespaces, the `ai-lab-local` StorageClass and the static volumes on `/srv/ai-lab` | the server owner, **once** |
+| `cluster/` | the two namespaces, the `ai-lab-local` StorageClass, the static volumes on `/srv/ai-lab`, and the runner's namespace-scoped identity (`deployer.yaml`) | the server owner, **once** |
 | `base/` | PostgreSQL, API (with `migrate` init container), dashboard, nightly backup, network policies, quota | `scripts/deploy.sh` |
 | `overlays/staging`, `overlays/prod` | namespace, sizes, quota and dashboard ClusterIP per environment | `scripts/deploy.sh` |
 

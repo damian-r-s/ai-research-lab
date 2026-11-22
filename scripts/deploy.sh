@@ -17,6 +17,16 @@ KEEP_IMAGES=3
 IMAGES=(ai-lab-api ai-lab-frontend)
 
 die() { echo "error: $*" >&2; exit 1; }
+
+# Image import/removal in k3s needs root. Prefer the restricted helper (only lab images allowed);
+# fall back to plain `sudo k3s ctr` for manual deploys on a server without the helper.
+HELPER=/usr/local/sbin/ai-lab-image
+k3s_import() {
+  if [[ -x "$HELPER" ]]; then sudo "$HELPER" import; else sudo k3s ctr -n k8s.io images import -; fi
+}
+k3s_rm() {
+  if [[ -x "$HELPER" ]]; then sudo "$HELPER" rm "$1"; else sudo k3s ctr -n k8s.io images rm "$1"; fi
+}
 log() { echo "[$(date -u +%H:%M:%SZ)] $*"; }
 
 namespace_for() {
@@ -47,7 +57,8 @@ EOF
 
 preflight() {  # preflight <env>
   local ns="$1"
-  for tool in git kubectl podman k3s; do command -v "$tool" >/dev/null || die "$tool not found"; done
+  for tool in git kubectl podman; do command -v "$tool" >/dev/null || die "$tool not found"; done
+  [[ -x "$HELPER" ]] || command -v k3s >/dev/null || die "neither $HELPER nor k3s found"
   kubectl get namespace "$ns" >/dev/null 2>&1 \
     || die "namespace $ns does not exist; follow docs/operations/SERVER_SETUP.md first"
   kubectl -n "$ns" get secret lab-secrets >/dev/null 2>&1 \
@@ -67,7 +78,7 @@ build_and_import() {  # build_and_import <sha>
   podman build --quiet -t "localhost/ai-lab-frontend:$sha" "$src/frontend" >/dev/null
   for image in "${IMAGES[@]}"; do
     log "importing localhost/$image:$sha into k3s"
-    podman save "localhost/$image:$sha" | sudo k3s ctr -n k8s.io images import - >/dev/null
+    podman save --format docker-archive "localhost/$image:$sha" | k3s_import >/dev/null
   done
 }
 
@@ -105,7 +116,7 @@ prune_images() {  # keep the newest KEEP_IMAGES tags of each lab image
       | grep -E '^[0-9a-f]{40}$' | tail -n +"$((KEEP_IMAGES + 1))" | while read -r old; do
         log "pruning localhost/$image:$old"
         podman rmi "localhost/$image:$old" >/dev/null || true
-        sudo k3s ctr -n k8s.io images rm "localhost/$image:$old" >/dev/null 2>&1 || true
+        k3s_rm "localhost/$image:$old" >/dev/null 2>&1 || true
       done
   done
 }

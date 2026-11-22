@@ -49,6 +49,7 @@ Exit criterion: the user approves the architecture and the decisions marked *Nee
 | 6 | Dashboard (1.15): login, status, live audit log, user admin; production nginx config; browser tests | ✅ 12 browser tests (desktop + phone) and 4 new API tests pass (2026-11-22); backend suite 119 |
 | 7a | Backend `Dockerfile`, kustomize manifests (base + staging/prod), `scripts/deploy.sh`, server scripts (secrets, inventory, isolation, restore), runbook | ✅ built locally (2026-11-22): 17 manifest policy tests pass; images not built yet (no podman on the laptop) |
 | 7b | Server: storage volume, cluster objects, first staging deployment, criteria 1.16–1.19 ([SERVER_SETUP.md](operations/SERVER_SETUP.md)) | ⬜ waiting for the owner to run the runbook |
+| 7c | The lab's deploy runner (D-07b): GitHub workflow, namespace-scoped deployer identity, restricted image helper | ✅ built locally (2026-11-22): 21 policy and helper tests pass; activation is runbook step 10 |
 **Scope** (repository layout mirrors `agentic-trading-intelligence-platform`, ARCHITECTURE §5):
 - Restructure the existing draft into that layout (root `app.py`, `src/` package, `test/`).
 - Backend: FastAPI app, configuration with environment and hardware profiles, structured logging.
@@ -192,7 +193,7 @@ persistence, restart, limit, stop, model-failure, security and permission tests.
 | API | health, system status, users, audit list, latest and SSE endpoints | 7 HTTP stream tests (real server), 10 system tests, 7 probe tests |
 | Dashboard | login, live status, live audit log, user admin; production nginx template; frontend Dockerfile | 12 browser tests (desktop + phone) |
 
-Totals: **136 backend tests (including 17 manifest policy checks) and 12 browser tests pass**. ruff, strict mypy, ESLint and the
+Totals: **157 backend tests (including manifest, RBAC, workflow and image-helper policy checks) and 12 browser tests pass**. ruff, strict mypy, ESLint and the
 TypeScript check are clean.
 
 **Defects found by the tests and fixed**
@@ -211,7 +212,7 @@ TypeScript check are clean.
   plus the server part of 1.11–1.12. Everything for it is written and checked locally. The
   container images themselves have not been built yet, because the laptop has no podman; the
   first build happens on the server.
-- The lab's GitHub runner (D-07b), after the first manual deployment.
+- Activating the lab's GitHub runner (runbook step 10), after staging passes.
 - No research functionality exists yet (Phase 2 onwards).
 
 **Known limitations**

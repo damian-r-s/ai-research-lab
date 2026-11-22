@@ -1,0 +1,106 @@
+# Applied ONCE by the server owner. Identity used by the lab's GitHub runner (DECISIONS D-07b).
+# It can manage the lab's objects in ai-lab and ai-lab-staging ONLY, plus read a few cluster-scoped
+# objects the deploy script checks. It cannot touch `default`, other namespaces, cluster-scoped
+# resources, or read/modify Secrets beyond checking that lab-secrets exists.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: lab-deployer
+  namespace: ai-lab
+  labels: { app.kubernetes.io/part-of: ai-research-lab }
+---
+# Long-lived token for the runner's kubeconfig (scripts/server/make-deployer-kubeconfig.sh).
+apiVersion: v1
+kind: Secret
+metadata:
+  name: lab-deployer-token
+  namespace: ai-lab
+  labels: { app.kubernetes.io/part-of: ai-research-lab }
+  annotations: { kubernetes.io/service-account.name: lab-deployer }
+type: kubernetes.io/service-account-token
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ai-lab-deployer
+  labels: { app.kubernetes.io/part-of: ai-research-lab }
+rules:
+  # What scripts/deploy.sh and the server scripts apply, wait for and inspect.
+  - apiGroups: [""]
+    resources: [services, configmaps, persistentvolumeclaims, resourcequotas, limitranges]
+    verbs: [get, list, watch, create, update, patch]
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list, watch, create, delete]  # create/delete: the restore test's reader pod
+  - apiGroups: [""]
+    resources: [pods/exec, pods/log]
+    verbs: [get, create]
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [lab-secrets]
+    verbs: [get]  # existence check only; the runner never creates or changes credentials
+  - apiGroups: [""]
+    resources: [events]
+    verbs: [get, list, watch]
+  - apiGroups: [apps]
+    resources: [deployments, statefulsets, replicasets]
+    verbs: [get, list, watch, create, update, patch]
+  - apiGroups: [batch]
+    resources: [cronjobs]
+    verbs: [get, list, watch, create, update, patch]
+  - apiGroups: [batch]
+    resources: [jobs]
+    verbs: [get, list, watch, create, delete]  # pre-deploy backups
+  - apiGroups: [networking.k8s.io]
+    resources: [networkpolicies]
+    verbs: [get, list, watch, create, update, patch]
+---
+# Granted per lab namespace (a ClusterRole bound by RoleBindings is limited to that namespace).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: lab-deployer
+  namespace: ai-lab
+  labels: { app.kubernetes.io/part-of: ai-research-lab }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: ai-lab-deployer }
+subjects:
+  - { kind: ServiceAccount, name: lab-deployer, namespace: ai-lab }
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: lab-deployer
+  namespace: ai-lab-staging
+  labels: { app.kubernetes.io/part-of: ai-research-lab }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: ai-lab-deployer }
+subjects:
+  - { kind: ServiceAccount, name: lab-deployer, namespace: ai-lab }
+---
+# Read-only, cluster-scoped: the deploy preflight checks the namespace and storage class exist,
+# and the isolation check reads the node address.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ai-lab-deployer-read
+  labels: { app.kubernetes.io/part-of: ai-research-lab }
+rules:
+  - apiGroups: [""]
+    resources: [namespaces]
+    resourceNames: [ai-lab, ai-lab-staging]
+    verbs: [get]
+  - apiGroups: [storage.k8s.io]
+    resources: [storageclasses]
+    resourceNames: [ai-lab-local]
+    verbs: [get]
+  - apiGroups: [""]
+    resources: [nodes]
+    verbs: [get, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ai-lab-deployer-read
+  labels: { app.kubernetes.io/part-of: ai-research-lab }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: ai-lab-deployer-read }
+subjects:
+  - { kind: ServiceAccount, name: lab-deployer, namespace: ai-lab }

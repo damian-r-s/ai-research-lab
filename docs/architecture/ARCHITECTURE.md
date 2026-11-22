@@ -781,10 +781,12 @@ Realistic workload tests (real models, real sources, real limits) run in `stagin
    staging, and runs a backup job before applying anything.
 6. **Roll back:** redeploy the previous SHA (the last 3 image versions are kept). Migrations follow
    expand/contract, so the previous version runs against the new schema.
-7. **CI/CD:** a self-hosted runner already exists on the server for the other repository, but runners
-   registered to a personal account's repository serve only that repository. The lab gets its **own
-   runner registration** under a separate low-privilege service user (D-07b). Workflow: on push to
-   `main`, run the tests, then deploy to staging; promotion to `prod` is a manual approval in GitHub.
+7. **Deploy automation** (`.github/workflows/deploy.yml`, D-07b): the lab has its **own** runner on
+   the server, under the system user `ailab-ci`. Its cluster identity (`k8s/cluster/deployer.yaml`)
+   reaches only the two lab namespaces, and its only root privilege is the image helper, which
+   accepts lab images only. A push to `main` deploys to staging. Production is a manual workflow
+   run for a commit already verified on staging. Tests are **not** run in CI (U-13); they run on the
+   laptop before every push.
 
 **Dashboard exposure (U-9):** the frontend Service has a pinned ClusterIP per environment (staging
 `10.43.100.11`, prod `10.43.100.10`). On the host, `tailscale serve` publishes it over HTTPS on the

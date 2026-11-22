@@ -1,0 +1,14 @@
+.git
+.venv
+var
+frontend
+docs
+test
+k8s
+**/__pycache__
+*.pyc
+.env
+.env.*
+.mypy_cache
+.pytest_cache
+.ruff_cache

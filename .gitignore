@@ -30,6 +30,7 @@ frontend/dist/
 frontend/test-results/
 frontend/playwright-report/
 frontend/e2e/.run/
+k8s/.render-*/
 *.tsbuildinfo
 
 # --- Editors / OS ---

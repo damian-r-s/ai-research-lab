@@ -1,0 +1,19 @@
+# Server production namespace (ai-lab). Secrets come from mounted files (LAB_SECRETS_DIR).
+env = "prod"
+data_dir = "/tmp"
+
+[logging]
+level = "INFO"
+format = "json"
+
+[auth]
+cookie_secure = true     # served over HTTPS by `tailscale serve`
+
+[api]
+# The dashboard's nginx pods (k3s pod network). Their X-Forwarded-For is trusted; nothing else's.
+trusted_proxies = ["10.42.0.0/16"]
+
+[resources]
+# "/" inside the container is the host root filesystem's overlay; /host/srv/ai-lab is the lab LV.
+disk_paths = ["/", "/host/srv/ai-lab"]
+expect_gpu = false

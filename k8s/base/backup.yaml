@@ -1,0 +1,88 @@
+# Nightly logical backup of the lab database to the lab volume, with the audit chain head
+# recorded next to each dump (detects deletion of the newest audit events on restore).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: backups
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: ai-lab-local
+  resources:
+    requests: { storage: 10Gi }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-backup-script
+data:
+  backup.sh: |
+    #!/bin/bash
+    set -euo pipefail
+    ts="$(date -u +%Y%m%dT%H%M%SZ)"
+    out="/backups/lab-${ts}.dump"
+    export PGPASSWORD="$(cat /run/secrets/pg/owner-password)"
+    conn=(-h postgres -U lab_owner -d lab)
+    # Chain head BEFORE the dump: any event in the dump is at or after this point.
+    psql "${conn[@]}" -Atc "SELECT coalesce(max(seq), 0) FROM lab.events" > "${out}.audit-head"
+    pg_dump "${conn[@]}" --format=custom --file="${out}.partial"
+    mv "${out}.partial" "${out}"
+    (cd /backups && sha256sum "$(basename "${out}")" > "$(basename "${out}").sha256")
+    echo "backup written: ${out} ($(du -h "${out}" | cut -f1)), audit head seq $(cat "${out}.audit-head")"
+    # Retention: keep the newest KEEP dumps.
+    ls -1t /backups/lab-*.dump | tail -n +"$((KEEP + 1))" | while read -r old; do
+      rm -f "${old}" "${old}.sha256" "${old}.audit-head"
+      echo "removed old backup ${old}"
+    done
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgres-backup
+spec:
+  schedule: "30 2 * * *"  # 02:30 UTC daily
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        metadata:
+          labels: { app.kubernetes.io/name: postgres-backup }
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          securityContext:
+            runAsUser: 999
+            runAsGroup: 999
+            fsGroup: 999
+            runAsNonRoot: true
+            seccompProfile: { type: RuntimeDefault }
+          containers:
+            - name: backup
+              image: docker.io/pgvector/pgvector:0.8.7-pg17-trixie
+              command: [/bin/bash, /scripts/backup.sh]
+              env:
+                - { name: KEEP, value: "14" }
+              volumeMounts:
+                - { name: backups, mountPath: /backups }
+                - { name: script, mountPath: /scripts, readOnly: true }
+                - { name: secrets, mountPath: /run/secrets/pg, readOnly: true }
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: { drop: [ALL] }
+              resources:
+                requests: { cpu: 50m, memory: 64Mi }
+                limits: { cpu: "1", memory: 512Mi }
+          volumes:
+            - name: backups
+              persistentVolumeClaim: { claimName: backups }
+            - name: script
+              configMap: { name: postgres-backup-script }
+            - name: secrets
+              secret:
+                secretName: lab-secrets
+                defaultMode: 0440
+                items:
+                  - { key: owner-password, path: owner-password }

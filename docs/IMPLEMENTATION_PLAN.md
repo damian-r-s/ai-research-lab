@@ -1,6 +1,6 @@
 # Implementation Plan and Test Criteria
 
-**Status:** v1.0, approved 2026-11-22 · Phase 1 in progress (steps 1–6 of 7 done) · **Last updated:** 2026-11-22
+**Status:** v1.0, approved 2026-11-22 · Phase 1 in progress (steps 1–7a done; 7b on the server) · **Last updated:** 2026-11-22
 
 **Governing rules:**
 - Spec §19.16: a phase does not start until the previous phase's tests pass.
@@ -47,7 +47,8 @@ Exit criterion: the user approves the architecture and the decisions marked *Nee
 | 4 | Login, sessions, roles (1.8–1.10); authenticated event list and SSE endpoints (1.13 HTTP part) | ✅ 37 tests pass (2026-11-22); total suite 98 |
 | 5 | Health, system status and resource monitoring; lifecycle audit events; restart survival (1.11–1.12, 1.14) | ✅ 17 tests pass (2026-11-22); total suite 115 |
 | 6 | Dashboard (1.15): login, status, live audit log, user admin; production nginx config; browser tests | ✅ 12 browser tests (desktop + phone) and 4 new API tests pass (2026-11-22); backend suite 119 |
-| 7 | k3s manifests and deploy script; server steps (1.16–1.19); set `api.trusted_proxies` to the k3s pod network so the API sees real client IPs behind nginx (mechanism built and tested in step 6) | ⬜ |
+| 7a | Backend `Dockerfile`, kustomize manifests (base + staging/prod), `scripts/deploy.sh`, server scripts (secrets, inventory, isolation, restore), runbook | ✅ built locally (2026-11-22): 17 manifest policy tests pass; images not built yet (no podman on the laptop) |
+| 7b | Server: storage volume, cluster objects, first staging deployment, criteria 1.16–1.19 ([SERVER_SETUP.md](operations/SERVER_SETUP.md)) | ⬜ waiting for the owner to run the runbook |
 **Scope** (repository layout mirrors `agentic-trading-intelligence-platform`, ARCHITECTURE §5):
 - Restructure the existing draft into that layout (root `app.py`, `src/` package, `test/`).
 - Backend: FastAPI app, configuration with environment and hardware profiles, structured logging.
@@ -191,7 +192,7 @@ persistence, restart, limit, stop, model-failure, security and permission tests.
 | API | health, system status, users, audit list, latest and SSE endpoints | 7 HTTP stream tests (real server), 10 system tests, 7 probe tests |
 | Dashboard | login, live status, live audit log, user admin; production nginx template; frontend Dockerfile | 12 browser tests (desktop + phone) |
 
-Totals: **119 backend tests and 12 browser tests pass**. ruff, strict mypy, ESLint and the
+Totals: **136 backend tests (including 17 manifest policy checks) and 12 browser tests pass**. ruff, strict mypy, ESLint and the
 TypeScript check are clean.
 
 **Defects found by the tests and fixed**
@@ -206,11 +207,10 @@ TypeScript check are clean.
 - The GPU driver was re-initialised on every sample.
 
 **Not done yet**
-- Step 7:
-  - backend `Dockerfile`, `k8s/` manifests and `scripts/deploy.sh`;
-  - server preparation (storage volume, namespaces, persistent volumes);
-  - first deployment to `ai-lab-staging`;
-  - criteria 1.16–1.19, and 1.11–1.12 on the server.
+- Step 7b: server preparation, the first deployment to `ai-lab-staging`, and criteria 1.16–1.19
+  plus the server part of 1.11–1.12. Everything for it is written and checked locally. The
+  container images themselves have not been built yet, because the laptop has no podman; the
+  first build happens on the server.
 - The lab's GitHub runner (D-07b), after the first manual deployment.
 - No research functionality exists yet (Phase 2 onwards).
 

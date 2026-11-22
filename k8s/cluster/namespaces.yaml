@@ -1,0 +1,12 @@
+# Applied ONCE by the server owner (cluster-scoped objects). The lab never modifies `default`.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ai-lab
+  labels: { app.kubernetes.io/part-of: ai-research-lab, lab.environment: prod }
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ai-lab-staging
+  labels: { app.kubernetes.io/part-of: ai-research-lab, lab.environment: staging }

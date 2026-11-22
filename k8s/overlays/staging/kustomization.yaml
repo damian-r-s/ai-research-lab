@@ -1,0 +1,33 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: ai-lab-staging
+resources:
+  - ../../base
+labels:
+  - pairs: { lab.environment: staging }
+    includeSelectors: false
+configMapGenerator:
+  - name: lab-env
+    literals:
+      - LAB_ENV=staging
+      - LAB_SECRETS_DIR=/run/secrets/lab
+# Image tags are set at deploy time by scripts/deploy.sh (git SHA), never "latest".
+images:
+  - { name: localhost/ai-lab-api, newTag: UNSET }
+  - { name: localhost/ai-lab-frontend, newTag: UNSET }
+patches:
+  - target: { kind: Service, name: frontend }
+    patch: |
+      - { op: replace, path: /spec/clusterIP, value: "10.43.100.11" }
+  - target: { kind: StatefulSet, name: postgres }
+    patch: |
+      - { op: replace, path: /spec/volumeClaimTemplates/0/spec/resources/requests/storage, value: 10Gi }
+  - target: { kind: PersistentVolumeClaim, name: backups }
+    patch: |
+      - { op: replace, path: /spec/resources/requests/storage, value: 10Gi }
+  - target: { kind: ResourceQuota, name: lab-quota }
+    patch: |
+      - { op: replace, path: /spec/hard/requests.cpu, value: "1" }
+      - { op: replace, path: /spec/hard/requests.memory, value: 2Gi }
+      - { op: replace, path: /spec/hard/limits.cpu, value: "6" }
+      - { op: replace, path: /spec/hard/limits.memory, value: 4Gi }

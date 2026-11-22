@@ -1,0 +1,84 @@
+# Applied ONCE by the server owner, after creating the directories (docs/operations/SERVER_SETUP.md).
+# Static local volumes on the dedicated LV mounted at /srv/ai-lab (DECISIONS D-17). Each volume is
+# pre-bound to exactly one claim, so lab data can never land on the root filesystem or be bound by
+# another workload. reclaimPolicy Retain: deleting a claim never deletes data.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: ai-lab-local
+  labels: { app.kubernetes.io/part-of: ai-research-lab }
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Retain
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: ai-lab-staging-postgres
+  labels: { app.kubernetes.io/part-of: ai-research-lab, lab.environment: staging }
+spec:
+  capacity: { storage: 10Gi }
+  accessModes: [ReadWriteOnce]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ai-lab-local
+  claimRef: { namespace: ai-lab-staging, name: data-postgres-0 }
+  local: { path: /srv/ai-lab/staging/postgres }
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - { key: kubernetes.io/hostname, operator: In, values: [alpha] }
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: ai-lab-staging-backups
+  labels: { app.kubernetes.io/part-of: ai-research-lab, lab.environment: staging }
+spec:
+  capacity: { storage: 10Gi }
+  accessModes: [ReadWriteOnce]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ai-lab-local
+  claimRef: { namespace: ai-lab-staging, name: backups }
+  local: { path: /srv/ai-lab/staging/backups }
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - { key: kubernetes.io/hostname, operator: In, values: [alpha] }
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: ai-lab-prod-postgres
+  labels: { app.kubernetes.io/part-of: ai-research-lab, lab.environment: prod }
+spec:
+  capacity: { storage: 100Gi }
+  accessModes: [ReadWriteOnce]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ai-lab-local
+  claimRef: { namespace: ai-lab, name: data-postgres-0 }
+  local: { path: /srv/ai-lab/prod/postgres }
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - { key: kubernetes.io/hostname, operator: In, values: [alpha] }
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: ai-lab-prod-backups
+  labels: { app.kubernetes.io/part-of: ai-research-lab, lab.environment: prod }
+spec:
+  capacity: { storage: 100Gi }
+  accessModes: [ReadWriteOnce]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ai-lab-local
+  claimRef: { namespace: ai-lab, name: backups }
+  local: { path: /srv/ai-lab/prod/backups }
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - { key: kubernetes.io/hostname, operator: In, values: [alpha] }

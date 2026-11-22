@@ -221,6 +221,11 @@ them changes the approved architecture.
 | I-7 | Frontend uses TypeScript 6.0, not 7.0 | `typescript-eslint` supports TypeScript < 6.1 |
 | I-8 | The dashboard image is `nginx-unprivileged` (non-root, port 8080) instead of the sibling's `nginx:alpine` | least privilege; the same template is tested locally with real nginx in the browser tests |
 | I-9 | Browser tests run against the real API behind the **production nginx template**, not a dev server | they test what will be deployed: headers, proxying, SSE unbuffering |
+| I-10 | uvicorn always runs with proxy-header handling **off** (`--no-proxy-headers`) | by default uvicorn rewrites the client address from `X-Forwarded-For` for requests from 127.0.0.1, which would bypass `api.trusted_proxies` |
+| I-11 | Manifests use kustomize (`base/` plus `overlays/{staging,prod}`) instead of the sibling's flat files | staging and prod share one definition; sizes, quota and ClusterIP differ per overlay; image tags are set to the exact commit at deploy time |
+| I-12 | Lab volumes are **static local PersistentVolumes**, each pre-bound to one claim, on `/srv/ai-lab`; k3s's local-path provisioner is left untouched | k3s reapplies its bundled manifests on restart, so its configuration must not be edited; pre-binding keeps lab data off the root filesystem |
+| I-13 | Database passwords are generated on the server by `scripts/server/create-secrets.sh`; no secret file exists in git, not even as a template with values | nothing to leak or commit by mistake |
+| I-14 | Phase 1 pods have **no internet egress** | nothing in Phase 1 needs it; egress to model and source APIs is opened per component when it is built (Phases 3–4) |
 
 ---
 

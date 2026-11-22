@@ -90,7 +90,13 @@ def main() -> int:
         migration_url = settings.database.effective_migration_url().get_secret_value()
         upgrade("head", app_role="lab_app", url=migration_url)
         asyncio.run(_seed(settings, password))
-        uvicorn.run(create_app(settings), host="127.0.0.1", port=args.port, log_level="warning")
+        uvicorn.run(
+            create_app(settings),
+            host="127.0.0.1",
+            port=args.port,
+            log_level="warning",
+            proxy_headers=False,  # the API applies its own rules (api.trusted_proxies)
+        )
     finally:
         with psycopg.connect(admin_url, autocommit=True) as conn:
             conn.execute(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)')

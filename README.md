@@ -51,3 +51,12 @@ npm run lint && npm run typecheck && npm run build
 npx playwright install chromium   # once
 npm run e2e                    # browser tests: real API + production nginx config, desktop and phone
 ```
+
+## Deployment (server)
+k3s on the home server, namespaces `ai-lab` and `ai-lab-staging`. See [k8s/README.md](k8s/README.md)
+and the step-by-step [server runbook](docs/operations/SERVER_SETUP.md).
+
+```bash
+scripts/deploy.sh render staging <git-sha>   # preview the manifests (works on the laptop)
+scripts/deploy.sh deploy staging             # on the server: build, import, apply, verify
+```

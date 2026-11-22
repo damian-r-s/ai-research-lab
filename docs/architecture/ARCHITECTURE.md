@@ -761,26 +761,35 @@ Realistic workload tests (real models, real sources, real limits) run in `stagin
 2. **GitHub:** push to a private repository (`git@github.com:<owner>/ai-research-lab.git`, D-07).
    An optional GitHub-hosted CI workflow runs the same tests on push; it needs no access to the
    server.
-3. **Server:** `scripts/deploy.sh <git-sha> staging`, run by hand at first and later by the lab's
-   own self-hosted runner (D-07b):
-   1. `git fetch` and `git checkout <sha>` in a dedicated deploy checkout;
-   2. `podman build` the backend and frontend images, tagged `localhost/ai-lab-api:<sha>` and
-      `localhost/ai-lab-frontend:<sha>`;
-   3. `podman save | sudo k3s ctr images import -`;
-   4. `kubectl -n ai-lab-staging apply`, with the image tag set;
-   5. migrations run in the `migrate` init container (as in the sibling project);
-   6. `kubectl rollout status`.
-4. Run the system test suite against `staging`: health, workflow, restart, stop/resume, budget
-   limits.
-5. **Promote:** `scripts/deploy.sh <git-sha> prod`. It takes a backup first; the remaining steps
-   are the same.
-6. **Roll back:** redeploy the previous SHA (its images stay imported). Migrations follow
+3. **Server:** `scripts/deploy.sh deploy staging [git-ref]`. It is run by hand at first, and later
+   by the lab's own self-hosted runner (D-07b). It:
+   1. resolves the ref to a commit and builds from `git archive <sha>`, so local edits never
+      reach an image;
+   2. `podman build`s `localhost/ai-lab-api:<sha>` and `localhost/ai-lab-frontend:<sha>`;
+   3. imports both with `podman save | sudo k3s ctr -n k8s.io images import -`;
+   4. renders the kustomize overlay with those exact tags (`scripts/deploy.sh render` shows the
+      result without a cluster) and `kubectl apply`s it;
+   5. lets the `migrate` init container apply migrations, as in the sibling project;
+   6. waits for the rollout, then checks readiness from inside the API pod.
+
+   The procedure, with every command, is in
+   [SERVER_SETUP.md](../operations/SERVER_SETUP.md).
+4. Run the server checks: health, isolation (`scripts/server/check-isolation.sh`), the
+   coexistence inventory diff (`scripts/server/inventory.sh`) and the restore test
+   (`scripts/server/restore-test.sh`).
+5. **Promote:** `scripts/deploy.sh deploy prod <sha>`. It accepts only a commit already verified on
+   staging, and runs a backup job before applying anything.
+6. **Roll back:** redeploy the previous SHA (the last 3 image versions are kept). Migrations follow
    expand/contract, so the previous version runs against the new schema.
 7. **CI/CD:** a self-hosted runner already exists on the server for the other repository, but runners
-   registered to a personal account's repository serve only that repository. The lab needs its
-   **own runner registration**, ideally under a separate low-privilege service user (D-07b).
-   Workflow: on push to `main`, run tests, then `deploy.sh <sha> staging`; promotion to `prod` is a
-   manual approval in GitHub.
+   registered to a personal account's repository serve only that repository. The lab gets its **own
+   runner registration** under a separate low-privilege service user (D-07b). Workflow: on push to
+   `main`, run the tests, then deploy to staging; promotion to `prod` is a manual approval in GitHub.
+
+**Dashboard exposure (U-9):** the frontend Service has a pinned ClusterIP per environment (staging
+`10.43.100.11`, prod `10.43.100.10`). On the host, `tailscale serve` publishes it over HTTPS on the
+tailnet only (prod `:443`, staging `:8443`). There are no NodePorts and nothing listens on the LAN,
+and the ResourceQuota forbids NodePorts and LoadBalancers outright.
 
 ### 13.3. Coexistence with the existing project on the same k3s cluster
 - **Own namespaces** (`ai-lab`, `ai-lab-staging`). The lab never creates, edits or reads
@@ -795,9 +804,8 @@ Realistic workload tests (real models, real sources, real limits) run in `stagin
   dedicated LV mounted at `/srv/ai-lab` (D-17), so lab growth never fills the root filesystem the
   other project depends on. The lab never uses the other project's database (or its PostgreSQL
   NodePort 30432).
-- **No NodePorts for internal services** (PostgreSQL, runners). The dashboard is reached over the
-  tailnet: a Traefik Ingress, or `tailscale serve` in front of the frontend Service (chosen and
-  tested in Phase 1). If a NodePort is needed in the interim, it uses a range that does not collide
+- **No NodePorts at all** (enforced by the ResourceQuota). The dashboard is reached over the
+  tailnet through `tailscale serve` in front of its pinned ClusterIP (see §13.2). If a NodePort is needed in the interim, it uses a range that does not collide
   with 30000, 30030, 30080 or 30432.
 - **Image names prefixed** `localhost/ai-lab-*`, so imports never overwrite the other project's
   `localhost/agentic-trading-platform*:local` images.

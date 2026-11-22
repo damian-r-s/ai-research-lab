@@ -7,3 +7,7 @@ mypy>=1.13
 types-psutil
 pyyaml
 types-PyYAML
+# Phase 2a spike (test/spike). Dev-only until the go/no-go decision; moved to requirements.in in 2b.
+langgraph>=1.2
+langgraph-checkpoint-postgres>=3.2
+procrastinate>=3.12

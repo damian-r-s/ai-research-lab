@@ -873,6 +873,10 @@ profiles, `models.yaml`, quotas, `replicas`) and the k3s nodes available.
 Each assumption gets an automated test before the dependent design is built on it. If one fails,
 the design is revised and the user is told.
 
+**Results (2026-11-22):** see [SPIKE_2A_FINDINGS.md](SPIKE_2A_FINDINGS.md). A-1 to A-8 hold, with
+A-5 holding only for async nodes. A-9 (graceful pause via `RunControl`) was added. The design
+changes C-1 to C-8 proposed there are applied to this document only after the owner approves them.
+
 | ID | Assumption | Test |
 |---|---|---|
 | A-1 | The async PostgreSQL checkpointer persists state per super-step and resumes a thread after `kill -9` of the runner process | crash a runner mid-graph, resume on a fresh process, compare state |

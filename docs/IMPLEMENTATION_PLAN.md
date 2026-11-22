@@ -87,10 +87,20 @@ Exit criterion: the user approves the architecture and the decisions marked *Nee
 | 1.18 | A backup restores into a scratch DB and the audit chain verifies there | server | ⬜ step 7 |
 | 1.19 | Pod deletion and server reboot: the lab comes back on its own and no data is lost | server | ⬜ step 7 |
 
-## Phase 2 — LangGraph orchestration, runs and dispatch · ⬜
+## Phase 2 — LangGraph orchestration, runs and dispatch · 🟨 step 2a in progress
+**Recorded exception to spec §19.16 (owner's instruction, 2026-11-22):** step 2a started before
+Phase 1 passed its server criteria 1.16–1.19. The spike runs on the laptop only, adds no runtime
+dependency to the deployed images (its libraries are dev-only until go/no-go) and changes no
+Phase 1 code. Phase 1 stays 🟨 until 1.16–1.19 pass, and **step 2b does not start before that**.
+
 **Step 2a, evaluation spike.** Verify assumptions A-1 to A-8 (ARCHITECTURE §16) with automated
 tests on throwaway graphs, then write a short findings report. **The user decides go or no-go
 before step 2b.** If an assumption fails, the design is revised and presented first.
+
+**Step 2a status (2026-11-22): ✅ spike complete, waiting for the owner's go/no-go.** Findings,
+proposed design changes C-1 to C-8 and the recommendation are in
+[SPIKE_2A_FINDINGS.md](architecture/SPIKE_2A_FINDINGS.md). 24 spike tests are in `test/spike/`
+(criterion 2.1 met for the laptop; the staging run is part of 2.12).
 
 **Step 2b, implementation:**
 - LangGraph Postgres checkpointer in its own schema and with its own DB role.
@@ -206,6 +216,12 @@ TypeScript check are clean.
 - Login had an open-redirect hole.
 - Live audit events were invisible to browsers.
 - The GPU driver was re-initialised on every sample.
+
+**Phase 2a, LangGraph evaluation spike (recorded exception, laptop only)**
+- 24 tests in `test/spike/` cover A-1 to A-8 plus A-9, using real `kill -9` crashes and
+  process hand-over. All assumptions hold; A-5 holds only for async nodes.
+- Findings and proposed design changes: [SPIKE_2A_FINDINGS.md](architecture/SPIKE_2A_FINDINGS.md).
+- The libraries are dev-only (`requirements-dev.in`); the production image is unchanged.
 
 **Not done yet**
 - Step 7b: server preparation, the first deployment to `ai-lab-staging`, and criteria 1.16–1.19

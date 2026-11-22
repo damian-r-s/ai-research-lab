@@ -48,8 +48,15 @@ async def stream_events(
             yield None  # idle: keep-alive opportunity
 
 
+AUDIT_EVENT = "audit"  # one SSE event name for every audit event; the type is in the data
+
+
 def format_sse(item: EventOut | None) -> str:
-    """Render one item as a Server-Sent Events frame (`id` = seq, used as Last-Event-ID)."""
+    """Render one item as a Server-Sent Events frame (`id` = seq, used as Last-Event-ID).
+
+    Browsers' EventSource only delivers event names they subscribed to in advance, so all audit
+    events share one name and carry their own `type` in the JSON payload.
+    """
     if item is None:
         return ": keep-alive\n\n"
-    return f"id: {item.seq}\nevent: {item.type}\ndata: {item.model_dump_json()}\n\n"
+    return f"id: {item.seq}\nevent: {AUDIT_EVENT}\ndata: {item.model_dump_json()}\n\n"

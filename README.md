@@ -2,7 +2,7 @@
 
 Autonomous 24/7 AI research lab: it discovers innovation opportunities, investigates them with specialised agents, red-teams and independently verifies the evidence, and reports only well-supported recommendations.
 
-**Status:** Phase 1 (foundation) in progress. The API has login, user administration, health checks, system status and a live audit log; no research functionality exists yet. See [the implementation plan](docs/IMPLEMENTATION_PLAN.md) for the real state.
+**Status:** Phase 1 (foundation) in progress. A web dashboard and API provide login, user administration, health checks, system status and a live audit log; no research functionality exists yet. See [the implementation plan](docs/IMPLEMENTATION_PLAN.md) for the real state.
 
 ## Documents
 - [Specification](AI_RESEARCH_LAB_SPEC.md): governing requirements
@@ -39,3 +39,15 @@ Interactive docs at `/api/docs`. State-changing requests must send the `X-Lab-CS
 | `GET /api/events`, `GET /api/events/latest`, `GET /api/events/stream` (SSE) | viewer and above |
 | `GET /api/system/status` (CPU, RAM, disks, GPU, database, audit log) | viewer and above |
 | `GET /api/users`, `POST /api/users` | admin |
+
+## Dashboard (frontend/)
+React + TypeScript + Vite + Tailwind, served in production by unprivileged nginx (`frontend/nginx.conf.template`).
+
+```bash
+cd frontend
+npm install
+npm run dev                    # http://localhost:5173, proxies /api to http://127.0.0.1:8000
+npm run lint && npm run typecheck && npm run build
+npx playwright install chromium   # once
+npm run e2e                    # browser tests: real API + production nginx config, desktop and phone
+```

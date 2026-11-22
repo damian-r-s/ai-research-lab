@@ -12,6 +12,7 @@ and are typed as ``SecretStr`` so they never appear in logs or ``repr``.
 
 from __future__ import annotations
 
+import ipaddress
 import os
 from functools import lru_cache
 from pathlib import Path
@@ -78,6 +79,16 @@ class ApiSettings(_Section):
     csrf_header: str = "X-Lab-CSRF"
     # SSE: idle keep-alive interval; also how often a long-lived stream re-checks its session.
     sse_keepalive_s: float = Field(default=15.0, ge=0.1, le=300)
+    # Proxies (CIDRs) whose X-Forwarded-For header is trusted, e.g. the dashboard's nginx pods.
+    # Empty = the header is ignored, so clients cannot spoof their address.
+    trusted_proxies: list[str] = Field(default_factory=list)
+
+    @field_validator("trusted_proxies")
+    @classmethod
+    def _valid_networks(cls, v: list[str]) -> list[str]:
+        for cidr in v:
+            ipaddress.ip_network(cidr, strict=False)  # raises ValueError with a clear message
+        return v
 
 
 class LoggingSettings(_Section):

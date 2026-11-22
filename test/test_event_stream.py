@@ -218,6 +218,7 @@ def test_sse_frame_format() -> None:
         }
     )
     frame = format_sse(item)
-    assert frame.startswith("id: 7\nevent: test.thing.happened\ndata: {")
+    assert frame.startswith("id: 7\nevent: audit\ndata: {")
+    assert '"type":"test.thing.happened"' in frame
     assert frame.endswith("}\n\n")
     assert "\n\n" not in frame[:-2]  # one frame, no embedded blank lines

@@ -27,6 +27,9 @@ build/
 # --- Node / frontend ---
 node_modules/
 frontend/dist/
+frontend/test-results/
+frontend/playwright-report/
+frontend/e2e/.run/
 *.tsbuildinfo
 
 # --- Editors / OS ---

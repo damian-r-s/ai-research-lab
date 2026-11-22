@@ -265,9 +265,10 @@ ai-research-lab/
 │   └── services/             # process entry points: runner.py, enqueue_tick.py, backup.py (like the sibling's *_worker.py)
 ├── test/                     # unit/, integration/, workflow/, system/ (system tests need the cluster)
 ├── frontend/                 # React + TypeScript + Vite + Tailwind
-│   ├── src/{api,components,pages,store}/
-│   ├── Dockerfile            # node build stage → nginx
-│   └── nginx.conf            # serves the build, proxies /api to the api Service (SSE: buffering off)
+│   ├── src/{api,components,pages,hooks,lib}/
+│   ├── e2e/                  # Playwright smoke tests against the real API behind the production nginx config
+│   ├── Dockerfile            # node build stage → unprivileged nginx
+│   └── nginx.conf.template   # serves the build, proxies /api (SSE unbuffered), security headers
 ├── k8s/
 │   ├── README.md             # build, import, apply, verify (same shape as the sibling's)
 │   ├── namespace.yaml        # ai-lab (+ ai-lab-staging via overlay)

@@ -5,6 +5,7 @@ The stream is tested against a real uvicorn server over TCP, as a browser would 
 
 from __future__ import annotations
 
+import json
 import socket
 import threading
 import time
@@ -122,8 +123,18 @@ class SseReader:
                 raise AssertionError(f"timed out; events so far: {self.events}")
             time.sleep(0.02)
 
-    def audit(self) -> list[dict[str, str]]:
-        return [e for e in self.events if e.get("event", "").startswith("auth.")]
+    def audit(self, prefix: str = "auth.") -> list[dict[str, str]]:
+        """Audit frames whose payload type starts with `prefix` (adds a parsed `type` key)."""
+        out = []
+        for e in self.events:
+            if e.get("event") == "audit":
+                kind = json.loads(e["data"])["type"]
+                if kind.startswith(prefix):
+                    out.append({**e, "type": kind})
+        return out
+
+    def has_type(self, kind: str) -> bool:
+        return any(e["type"] == kind for e in self.audit(""))
 
 
 def test_stream_delivers_new_events_live(live: LiveServer, fresh_db: ScratchDatabase) -> None:
@@ -132,9 +143,9 @@ def test_stream_delivers_new_events_live(live: LiveServer, fresh_db: ScratchData
         assert response.headers["content-type"].startswith("text/event-stream")
         assert response.headers["cache-control"] == "no-cache"
         reader = SseReader(response)
-        reader.wait(lambda: any(e.get("event") == "auth.login.succeeded" for e in reader.events))
+        reader.wait(lambda: reader.has_type("auth.login.succeeded"))
         failed_login(live, "intruder")
-        reader.wait(lambda: any(e.get("event") == "auth.login.failed" for e in reader.events))
+        reader.wait(lambda: reader.has_type("auth.login.failed"))
         assert reader.retry == "3000"
         ids = [int(e["id"]) for e in reader.events]
         assert ids == sorted(ids) and len(ids) == len(set(ids))
@@ -153,7 +164,7 @@ def test_stream_resumes_from_last_event_id(live: LiveServer, fresh_db: ScratchDa
             time.sleep(KEEPALIVE_S * 2)  # give duplicates a chance to appear
             got = reader.audit()
     assert [int(e["id"]) for e in got] == [last_seen + 1, last_seen + 2]
-    assert all(e["event"] == "auth.login.failed" for e in got)
+    assert all(e["type"] == "auth.login.failed" for e in got)
 
 
 def test_idle_stream_sends_keepalives(live: LiveServer, fresh_db: ScratchDatabase) -> None:

@@ -55,16 +55,34 @@ def request_id(request: Request) -> str | None:
     return rid
 
 
-def client_ip(request: Request) -> str | None:
-    """The peer address if it is a real IP (not e.g. a Unix socket or test client name).
-
-    Behind a reverse proxy this is the proxy's address; trusting X-Forwarded-For is a deliberate
-    deployment decision (only from the known ingress), made when the ingress is set up.
-    """
-    host = request.client.host if request.client else None
-    if not host:
-        return None
+def _parse_ip(value: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
     try:
-        return str(ipaddress.ip_address(host))
+        return ipaddress.ip_address(value.strip())
     except ValueError:
         return None
+
+
+def client_ip(request: Request) -> str | None:
+    """The real client address, or None if it is not an IP (Unix socket, test client name).
+
+    X-Forwarded-For is honoured only when the direct peer is a configured trusted proxy. The
+    chain is read from the right, skipping trusted proxies; the first other address is the
+    client. Values a client prepends to the header itself are therefore never used.
+    """
+    state: AppState = request.app.state.lab
+    trusted = [ipaddress.ip_network(c, strict=False) for c in state.settings.api.trusted_proxies]
+    peer = _parse_ip(request.client.host) if request.client else None
+    if peer is None:
+        return None
+    forwarded = request.headers.get("x-forwarded-for")
+    if not forwarded or not any(peer in net for net in trusted):
+        return str(peer)
+    client = peer
+    for hop in reversed(forwarded.split(",")):
+        address = _parse_ip(hop)
+        if address is None:
+            break  # malformed hop: stop at the last address we could trust
+        client = address
+        if not any(address in net for net in trusted):
+            break
+    return str(client)

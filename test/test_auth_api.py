@@ -343,3 +343,76 @@ def test_create_user_script_bootstraps_an_admin(fresh_db: ScratchDatabase) -> No
         fresh_db.owner_url, "SELECT actor_id FROM lab.events WHERE type = 'auth.user.created'"
     )
     assert actor == [("cli.create_user",)]
+
+
+# --- client address behind proxies ----------------------------------------------------------
+
+
+def _client_with_proxies(db: ScratchDatabase, trusted: list[str]) -> TestClient:
+    from src.core.config import ApiSettings
+
+    settings = Settings(
+        env="test",
+        database=DatabaseSettings(url=db.app_url, migration_url=db.owner_url),
+        auth=AuthSettings(cookie_secure=False, max_failures=MAX_FAILURES),
+        api=ApiSettings(trusted_proxies=trusted),
+    )
+    return TestClient(create_app(settings), client=CLIENT_ADDRESS)
+
+
+def _recorded_ips(db: ScratchDatabase) -> list[str]:
+    rows = sql(db.owner_url, "SELECT host(ip) FROM lab.login_attempts ORDER BY attempted_at")
+    return [str(r[0]) for r in rows]
+
+
+def test_forwarded_header_is_ignored_from_untrusted_peers(fresh_db: ScratchDatabase) -> None:
+    make_user(fresh_db, "alice")
+    with _client_with_proxies(fresh_db, []) as c:
+        c.post(
+            "/api/auth/login",
+            json={"username": "alice", "password": PASSWORD},
+            headers={**CSRF, "X-Forwarded-For": "198.51.100.9"},
+        )
+    assert _recorded_ips(fresh_db) == ["203.0.113.7"]  # spoofing attempt ignored
+
+
+def test_forwarded_client_is_used_behind_a_trusted_proxy(fresh_db: ScratchDatabase) -> None:
+    make_user(fresh_db, "alice")
+    with _client_with_proxies(fresh_db, ["203.0.113.0/24"]) as c:
+        c.post(
+            "/api/auth/login",
+            json={"username": "alice", "password": PASSWORD},
+            # The client prepended a fake hop; the proxy appended the real address.
+            headers={**CSRF, "X-Forwarded-For": "1.2.3.4, 198.51.100.9"},
+        )
+    assert _recorded_ips(fresh_db) == ["198.51.100.9"]
+
+
+def test_one_attacker_behind_the_proxy_does_not_lock_out_everyone(
+    fresh_db: ScratchDatabase,
+) -> None:
+    """Regression: behind nginx every login came from the proxy IP, so per-IP throttling
+    turned a few failed attempts by anyone into a lockout for all users."""
+    make_user(fresh_db, "alice")
+    with _client_with_proxies(fresh_db, ["203.0.113.0/24"]) as c:
+        for i in range(MAX_FAILURES):
+            c.post(
+                "/api/auth/login",
+                json={"username": f"guess{i}", "password": "wrong wrong wrong"},
+                headers={**CSRF, "X-Forwarded-For": "198.51.100.66"},  # the attacker
+            )
+        ok = c.post(
+            "/api/auth/login",
+            json={"username": "alice", "password": PASSWORD},
+            headers={**CSRF, "X-Forwarded-For": "198.51.100.10"},  # a legitimate user
+        )
+    assert ok.status_code == 200
+
+
+def test_invalid_trusted_proxy_configuration_is_rejected() -> None:
+    from pydantic import ValidationError
+
+    from src.core.config import ApiSettings
+
+    with pytest.raises(ValidationError, match="does not appear to be an IPv4 or IPv6 network"):
+        ApiSettings(trusted_proxies=["not-a-network"])

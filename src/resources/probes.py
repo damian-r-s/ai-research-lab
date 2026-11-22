@@ -11,10 +11,11 @@ import asyncio
 import contextlib
 import os
 import socket
+import threading
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 import psutil
 
@@ -134,18 +135,41 @@ def probe_disks(paths: Sequence[str]) -> tuple[DiskInfo, ...]:
     return tuple(out)
 
 
+_nvml_lock = threading.Lock()
+_nvml_initialised = False
+
+
+def _ensure_nvml(pynvml: Any) -> None:
+    """Initialise NVML once per process (first init can take over a second; reuse is cheap)."""
+    global _nvml_initialised
+    with _nvml_lock:
+        if not _nvml_initialised:
+            pynvml.nvmlInit()
+            _nvml_initialised = True
+
+
+def _reset_nvml(pynvml: Any) -> None:
+    """After an NVML error, shut down so the next probe re-initialises from scratch."""
+    global _nvml_initialised
+    with _nvml_lock:
+        if _nvml_initialised:
+            with contextlib.suppress(pynvml.NVMLError):
+                pynvml.nvmlShutdown()
+            _nvml_initialised = False
+
+
 def probe_nvidia() -> GpuInfo:
-    """Query NVIDIA GPUs through NVML. Any failure → explicit 'unavailable'."""
+    """Query NVIDIA GPUs through NVML. Any failure → explicit 'unavailable' with the reason."""
     try:
         import pynvml
     except ImportError:
         return GpuInfo("unavailable", reason="nvidia-ml-py not installed")
     try:
-        pynvml.nvmlInit()
+        _ensure_nvml(pynvml)
     except pynvml.NVMLError as exc:
         return GpuInfo("unavailable", reason=f"NVML init failed: {exc}")
     try:
-        driver = pynvml.nvmlSystemGetDriverVersion()
+        driver = str(pynvml.nvmlSystemGetDriverVersion())
         devices = []
         for i in range(pynvml.nvmlDeviceGetCount()):
             h = pynvml.nvmlDeviceGetHandleByIndex(i)
@@ -168,30 +192,45 @@ def probe_nvidia() -> GpuInfo:
                     power_w=power,
                 )
             )
-        if not devices:
-            return GpuInfo("unavailable", reason="NVML reports no devices", driver_version=driver)
-        return GpuInfo("ok", driver_version=str(driver), devices=tuple(devices))
     except pynvml.NVMLError as exc:
+        _reset_nvml(pynvml)
         return GpuInfo("unavailable", reason=f"NVML query failed: {exc}")
-    finally:
-        with contextlib.suppress(pynvml.NVMLError):
-            pynvml.nvmlShutdown()
+    if not devices:
+        return GpuInfo("unavailable", reason="NVML reports no devices", driver_version=driver)
+    return GpuInfo("ok", driver_version=driver, devices=tuple(devices))
 
 
-def _warnings(mem: MemoryInfo, disks: Sequence[DiskInfo], gpu: GpuInfo) -> tuple[str, ...]:
+@dataclass(frozen=True, slots=True)
+class WarningThresholds:
+    """When a reading becomes a warning. Hardware expectations are configuration, not code."""
+
+    memory_percent: float = 90.0
+    disk_percent: float = 90.0
+    expect_gpu: bool = False  # a host without a GPU is normal unless configured otherwise
+
+
+def _warnings(
+    mem: MemoryInfo, disks: Sequence[DiskInfo], gpu: GpuInfo, limits: WarningThresholds
+) -> tuple[str, ...]:
     out = []
-    if mem.percent >= 90:
+    if mem.percent >= limits.memory_percent:
         out.append(f"memory usage high: {mem.percent:.0f}%")
     out.extend(
-        f"disk {d.mountpoint} usage high: {d.percent:.0f}%" for d in disks if d.percent >= 90
+        f"disk {d.mountpoint} usage high: {d.percent:.0f}%"
+        for d in disks
+        if d.percent >= limits.disk_percent
     )
-    if gpu.status != "ok":
-        out.append(f"GPU unavailable: {gpu.reason}")
+    if limits.expect_gpu and gpu.status != "ok":
+        out.append(f"GPU expected but unavailable: {gpu.reason}")
     return tuple(out)
 
 
 def take_snapshot(
-    disk_paths: Sequence[str], *, gpu_probe: GpuProbe = probe_nvidia, cpu_interval: float | None
+    disk_paths: Sequence[str],
+    *,
+    gpu_probe: GpuProbe = probe_nvidia,
+    cpu_interval: float | None,
+    limits: WarningThresholds = WarningThresholds(),
 ) -> ResourceSnapshot:
     cpu = probe_cpu(cpu_interval)
     mem = probe_memory()
@@ -204,7 +243,7 @@ def take_snapshot(
         memory=mem,
         disks=disks,
         gpu=gpu,
-        warnings=_warnings(mem, disks, gpu),
+        warnings=_warnings(mem, disks, gpu, limits),
     )
 
 
@@ -216,10 +255,16 @@ class ResourceMonitor:
     """
 
     def __init__(
-        self, disk_paths: Sequence[str], interval_s: float, gpu_probe: GpuProbe = probe_nvidia
+        self,
+        disk_paths: Sequence[str],
+        interval_s: float,
+        *,
+        limits: WarningThresholds = WarningThresholds(),
+        gpu_probe: GpuProbe = probe_nvidia,
     ) -> None:
         self._paths = list(disk_paths)
         self._interval = interval_s
+        self._limits = limits
         self._gpu_probe = gpu_probe
         self._latest: ResourceSnapshot | None = None
         self._task: asyncio.Task[None] | None = None
@@ -230,7 +275,11 @@ class ResourceMonitor:
 
     async def start(self) -> None:
         self._latest = await asyncio.to_thread(
-            take_snapshot, self._paths, gpu_probe=self._gpu_probe, cpu_interval=0.25
+            take_snapshot,
+            self._paths,
+            gpu_probe=self._gpu_probe,
+            cpu_interval=0.25,
+            limits=self._limits,
         )
         self._task = asyncio.create_task(self._loop(), name="resource-monitor")
 
@@ -245,7 +294,11 @@ class ResourceMonitor:
             await asyncio.sleep(self._interval)
             try:
                 self._latest = await asyncio.to_thread(
-                    take_snapshot, self._paths, gpu_probe=self._gpu_probe, cpu_interval=None
+                    take_snapshot,
+                    self._paths,
+                    gpu_probe=self._gpu_probe,
+                    cpu_interval=None,
+                    limits=self._limits,
                 )
             except Exception:
                 log.exception("resource_monitor.sample_failed")

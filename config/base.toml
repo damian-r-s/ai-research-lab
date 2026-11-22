@@ -12,3 +12,6 @@ failure_window_minutes = 15
 
 [resources]
 sample_interval_s = 5.0
+memory_warn_percent = 90
+disk_warn_percent = 90
+expect_gpu = false   # set true in an environment file once a GPU is installed

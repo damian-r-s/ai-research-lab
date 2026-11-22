@@ -2,7 +2,7 @@
 
 Autonomous 24/7 AI research lab: it discovers innovation opportunities, investigates them with specialised agents, red-teams and independently verifies the evidence, and reports only well-supported recommendations.
 
-**Status:** Phase 1 (foundation) in progress. The API has login, user administration, health checks and a live audit log; no research functionality exists yet. See [the implementation plan](docs/IMPLEMENTATION_PLAN.md) for the real state.
+**Status:** Phase 1 (foundation) in progress. The API has login, user administration, health checks, system status and a live audit log; no research functionality exists yet. See [the implementation plan](docs/IMPLEMENTATION_PLAN.md) for the real state.
 
 ## Documents
 - [Specification](AI_RESEARCH_LAB_SPEC.md): governing requirements
@@ -37,4 +37,5 @@ Interactive docs at `/api/docs`. State-changing requests must send the `X-Lab-CS
 | `GET /api/health/live`, `GET /api/health/ready` | public (probes) |
 | `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me` | login / any user |
 | `GET /api/events`, `GET /api/events/latest`, `GET /api/events/stream` (SSE) | viewer and above |
+| `GET /api/system/status` (CPU, RAM, disks, GPU, database, audit log) | viewer and above |
 | `GET /api/users`, `POST /api/users` | admin |

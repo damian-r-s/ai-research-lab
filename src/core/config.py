@@ -89,6 +89,10 @@ class ResourceSettings(_Section):
     sample_interval_s: float = Field(default=5.0, ge=0.5)
     # Filesystems to report; the data directory is always included.
     disk_paths: list[str] = Field(default_factory=lambda: ["/"])
+    memory_warn_percent: float = Field(default=90.0, gt=0, le=100)
+    disk_warn_percent: float = Field(default=90.0, gt=0, le=100)
+    # Hardware expectation of this host: a missing GPU is only a warning if one is expected.
+    expect_gpu: bool = False
 
 
 class Settings(BaseSettings):

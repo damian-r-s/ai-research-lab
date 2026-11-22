@@ -121,11 +121,11 @@ def test_logout_revokes_the_session_server_side(
     login(client, "alice")
     token = client.cookies["lab_session"]
     assert client.post("/api/auth/logout", headers=CSRF).status_code == 204
+    assert audit_types(fresh_db)[-1] == "auth.session.revoked"
     # Replaying the old token (e.g. a stolen cookie) must not work after logout.
     with TestClient(client.app) as other:
         other.cookies.set("lab_session", token)
         assert other.get("/api/auth/me").status_code == 401
-    assert audit_types(fresh_db)[-1] == "auth.session.revoked"
 
 
 def test_active_sessions_are_touched(client: TestClient, fresh_db: ScratchDatabase) -> None:

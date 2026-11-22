@@ -1,6 +1,6 @@
 # Implementation Plan and Test Criteria
 
-**Status:** Draft v0.4, awaiting approval · **Date:** 2026-11-22
+**Status:** v1.0, approved 2026-11-22 · Phase 1 in progress (steps 1–6 of 7 done) · **Last updated:** 2026-11-22
 
 **Governing rules:**
 - Spec §19.16: a phase does not start until the previous phase's tests pass.
@@ -18,8 +18,8 @@ separately from laptop runs.
 
 ---
 
-## Phase 0 — Architecture and design · 🟨 awaiting approval
-Deliverables: [ARCHITECTURE.md](architecture/ARCHITECTURE.md) v0.3, this plan,
+## Phase 0 — Architecture and design · ✅ approved by the owner on 2026-11-22
+Deliverables: [ARCHITECTURE.md](architecture/ARCHITECTURE.md), this plan,
 [DECISIONS.md](DECISIONS.md).
 Exit criterion: the user approves the architecture and the decisions marked *Needs input*.
 
@@ -55,35 +55,35 @@ Exit criterion: the user approves the architecture and the decisions marked *Nee
 - Audit: hash-chained audit log with an SSE stream.
 - Auth: session authentication and roles.
 - Health and readiness checks; real resource probes (CPU, RAM, disk, GPU).
-- Dashboard skeleton in React + Vite + TypeScript (English), served by nginx: login, system
-  status, live audit stream.
+- Dashboard in React + Vite + TypeScript (English), served by nginx: login, system status,
+  live audit log, user administration.
 - Images: backend `Dockerfile` (one image for api, runner, CronJobs, migrate init container) and
   `frontend/Dockerfile`; built with podman.
 - Server deployment: `k8s/` manifests (namespace, quota, LimitRange, NetworkPolicy, ConfigMap,
   Secret template, PostgreSQL, api, frontend, backup CronJob), `scripts/deploy.sh` (podman build →
   k3s import → apply → rollout status), basic `pg_dump` backup with a restore script.
 
-| # | Criterion | Where |
-|---|---|---|
-| 1.1 | Invalid configuration aborts start-up with a clear English error; secrets never appear in logs or `repr` | laptop |
-| 1.2 | Migrations: `upgrade head` → `downgrade base` → `upgrade head` on an empty DB; ORM metadata matches the migrated schema (autogenerate diff is empty) | laptop |
-| 1.3 | An event appended in a rolled-back transaction does not exist | laptop |
-| 1.4 | `UPDATE` / `DELETE` / `TRUNCATE` on the audit table are rejected; the app role lacks those privileges | laptop |
-| 1.5 | The hash chain verifies; a row tampered with (bypassing the trigger) is detected | laptop |
-| 1.6 | ≥ 50 concurrent appends keep a consistent chain and strictly increasing `seq` | laptop |
-| 1.7 | Unknown event types and invalid payloads are rejected | laptop |
-| 1.8 | Login cases: correct and wrong password, inactive user, expired and revoked session, throttling after N failures that survives an app restart | laptop |
-| 1.9 | Protected endpoints return 401 without a session and 403 with too low a role; state-changing requests without the CSRF header return 403 | laptop |
-| 1.10 | Session tokens are stored only as hashes; passwords as argon2id | laptop |
-| 1.11 | `/health/live` always returns 200; `/health/ready` returns 503 when the DB is unreachable or migrations are not current | laptop + server |
-| 1.12 | `/api/system/status` values match an independent psutil/NVML reading; a missing GPU yields an explicit `unavailable` status with a reason, never zeros | laptop + server |
-| 1.13 | SSE delivers events appended after connecting; reconnecting with `Last-Event-ID` delivers missed events with no duplicates | laptop |
-| 1.14 | Data written by one app instance is read by a new instance after the first shuts down (restart simulation) | laptop |
-| 1.15 | Frontend: `tsc --noEmit`, lint and `next build` pass; UI smoke test (login → status → logout); all UI strings are English | laptop |
-| 1.16 | Manifests pass `kubectl apply --dry-run=server` in `ai-lab-staging`; images build with podman and import into k3s; all pods become Ready within the namespace quota; `/health/ready` returns 200 | server |
-| 1.17 | Coexistence: the `default` namespace's resources, images and NodePorts are unchanged before and after the lab deploys (inventory diff); lab pods cannot reach the other project's Services (NetworkPolicy test) | server |
-| 1.18 | A backup restores into a scratch DB and the audit chain verifies there | server |
-| 1.19 | Pod deletion and server reboot: the lab comes back on its own and no data is lost | server |
+| # | Criterion | Where | Status |
+|---|---|---|---|
+| 1.1 | Invalid configuration aborts start-up with a clear English error; secrets never appear in logs or `repr` | laptop | ✅ |
+| 1.2 | Migrations: `upgrade head` → `downgrade base` → `upgrade head` on an empty DB; ORM metadata matches the migrated schema (autogenerate diff is empty) | laptop | ✅ |
+| 1.3 | An event appended in a rolled-back transaction does not exist | laptop | ✅ |
+| 1.4 | `UPDATE` / `DELETE` / `TRUNCATE` on the audit table are rejected; the app role lacks those privileges | laptop | ✅ |
+| 1.5 | The hash chain verifies; a row tampered with (bypassing the trigger) is detected | laptop | ✅ |
+| 1.6 | ≥ 50 concurrent appends keep a consistent chain and strictly increasing `seq` | laptop | ✅ |
+| 1.7 | Unknown event types and invalid payloads are rejected | laptop | ✅ |
+| 1.8 | Login cases: correct and wrong password, inactive user, expired and revoked session, throttling after N failures that survives an app restart | laptop | ✅ |
+| 1.9 | Protected endpoints return 401 without a session and 403 with too low a role; state-changing requests without the CSRF header return 403 | laptop | ✅ |
+| 1.10 | Session tokens are stored only as hashes; passwords as argon2id | laptop | ✅ |
+| 1.11 | `/health/live` always returns 200; `/health/ready` returns 503 when the DB is unreachable or migrations are not current | laptop + server | ✅ laptop; server ⬜ step 7 |
+| 1.12 | `/api/system/status` values match an independent psutil/NVML reading; a missing GPU yields an explicit `unavailable` status with a reason, never zeros | laptop + server | ✅ laptop; server ⬜ step 7 |
+| 1.13 | SSE delivers events appended after connecting; reconnecting with `Last-Event-ID` delivers missed events with no duplicates | laptop | ✅ |
+| 1.14 | Data written by one app instance is read by a new instance after the first shuts down (restart simulation) | laptop | ✅ |
+| 1.15 | Frontend: typecheck, lint and production build pass; UI smoke test (login → status → logout); all UI strings are English | laptop | ✅ |
+| 1.16 | Manifests pass `kubectl apply --dry-run=server` in `ai-lab-staging`; images build with podman and import into k3s; all pods become Ready within the namespace quota; `/health/ready` returns 200 | server | ⬜ step 7 |
+| 1.17 | Coexistence: the `default` namespace's resources, images and NodePorts are unchanged before and after the lab deploys (inventory diff); lab pods cannot reach the other project's Services (NetworkPolicy test) | server | ⬜ step 7 |
+| 1.18 | A backup restores into a scratch DB and the audit chain verifies there | server | ⬜ step 7 |
+| 1.19 | Pod deletion and server reboot: the lab comes back on its own and no data is lost | server | ⬜ step 7 |
 
 ## Phase 2 — LangGraph orchestration, runs and dispatch · ⬜
 **Step 2a, evaluation spike.** Verify assumptions A-1 to A-8 (ARCHITECTURE §16) with automated
@@ -178,11 +178,43 @@ persistence, restart, limit, stop, model-failure, security and permission tests.
 
 ---
 
-## Current Implementation State
-- Docs v0.2 written, awaiting approval.
-- Phase 1 step 1 done: the draft was moved into the mirrored layout (D-12). The moved modules
-  (audit log, auth, resource probes) compile, lint and type-check, but their behaviour is **not
-  tested yet**; that happens in steps 2–5.
-- A dev toolchain is installed in user space on the laptop (micromamba env `ai-lab`).
-- Nothing has been deployed or changed on the server.
-- Server snapshot collected 2026-11-22: [SERVER_ASSESSMENT.md](operations/SERVER_ASSESSMENT.md).
+## Current Implementation State (2026-11-22)
+
+**Done and tested (Phase 1 steps 1–6)**
+| Area | What exists | Evidence |
+|---|---|---|
+| Skeleton | root `app.py`/`main.py`, `src/` package, layered TOML config, Alembic migrations, `python -m scripts.migrate` | app starts; migrations apply |
+| Config and logging | validated layered settings, secrets from files, JSON logs with request IDs and redaction | 18 config + 6 logging tests |
+| Database | `lab` schema; least-privilege roles (`lab_owner` for migrations, `lab_app` for runtime) | 5 migration tests, including drift detection |
+| Audit log | append-only (trigger + grants), SHA-256 hash chain, `python -m scripts.verify_events`, live stream engine | 21 audit + 7 stream tests |
+| Auth | login, logout, sessions, roles, persistent throttling, CSRF, trusted proxies, `python -m scripts.create_user` | 34 auth tests |
+| API | health, system status, users, audit list, latest and SSE endpoints | 7 HTTP stream tests (real server), 10 system tests, 7 probe tests |
+| Dashboard | login, live status, live audit log, user admin; production nginx template; frontend Dockerfile | 12 browser tests (desktop + phone) |
+
+Totals: **119 backend tests and 12 browser tests pass**. ruff, strict mypy, ESLint and the
+TypeScript check are clean.
+
+**Defects found by the tests and fixed**
+- Typos in configuration sections were silently ignored.
+- Secrets mounted as files were not read.
+- Logs could vanish when the error stream was swapped.
+- A notification race could delay live events by up to 15 s.
+- Login crashed (HTTP 500) for clients without an IP address.
+- Behind a proxy, five failed logins would have locked out every user.
+- Login had an open-redirect hole.
+- Live audit events were invisible to browsers.
+- The GPU driver was re-initialised on every sample.
+
+**Not done yet**
+- Step 7:
+  - backend `Dockerfile`, `k8s/` manifests and `scripts/deploy.sh`;
+  - server preparation (storage volume, namespaces, persistent volumes);
+  - first deployment to `ai-lab-staging`;
+  - criteria 1.16–1.19, and 1.11–1.12 on the server.
+- The lab's GitHub runner (D-07b), after the first manual deployment.
+- No research functionality exists yet (Phase 2 onwards).
+
+**Known limitations**
+- Throttling per username can lock a known account for 15 minutes (R-18).
+- Deleting the newest audit events is not detectable by the chain alone (R-19).
+- One harmless third-party deprecation warning (Starlette test client).

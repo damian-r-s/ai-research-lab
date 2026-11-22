@@ -1,11 +1,11 @@
 # AI Research & Innovation Lab — Technical Architecture
 
-**Status:** Draft v0.4, awaiting approval · **Date:** 2026-11-22
+**Status:** v1.0, approved by the owner on 2026-11-22 · **Last updated:** 2026-11-22
 **Governing spec:** [AI_RESEARCH_LAB_SPEC.md](../../AI_RESEARCH_LAB_SPEC.md)
 **Related:** [IMPLEMENTATION_PLAN.md](../IMPLEMENTATION_PLAN.md) · [DECISIONS.md](../DECISIONS.md)
 
-This document describes the target design. Nothing here is implemented unless
-`IMPLEMENTATION_PLAN.md` says so. Statements about third-party behaviour (LangGraph, the job library,
+This document describes the target design. What is actually implemented and tested is tracked
+only in `IMPLEMENTATION_PLAN.md` (currently: Phase 1 steps 1–6, the foundation and dashboard). Statements about third-party behaviour (LangGraph, the job library,
 inference servers) are design assumptions. Each one is listed in §16 and must be confirmed by the
 Phase 2 evaluation spike before anything depends on it.
 
@@ -25,8 +25,9 @@ Phase 2 evaluation spike before anything depends on it.
 ## 0. Starting Point (inspected 2026-11-22)
 
 ### Repository
-- Contents: the spec, the v0.1 docs and an unexecuted Phase 1 draft under `backend/` and `scripts/`
-  (see DECISIONS D-12). No git repository.
+- At the start (2026-11-22) it held only the spec. It is now a private GitHub repository
+  (`damian-r-s/ai-research-lab`) laid out as described in §5, with the Phase 1 foundation and
+  dashboard implemented.
 
 ### Development laptop (not the production host)
 Dell Pro Max 14 MC14250 · Intel Core Ultra 7 265H (16 threads) · 30 GiB RAM · NVIDIA RTX PRO 500
@@ -190,8 +191,8 @@ Full details: [SERVER_ASSESSMENT.md](../operations/SERVER_ASSESSMENT.md).
 
 | Path | Mechanism | Guarantees / notes |
 |---|---|---|
-| web → api | HTTPS REST (JSON), cookie session, CSRF header | Pydantic validation on every endpoint |
-| api → web (live) | SSE `GET /api/events/stream` | resumes from `Last-Event-ID` = audit `seq`; source is the table, so nothing is lost |
+| web → api | HTTPS REST (JSON), cookie session, `X-Lab-CSRF` header on state-changing requests | Pydantic validation on every endpoint; one error format `{"error": {"code", "message"}}`; every response carries `X-Request-ID`, reused as the audit `correlation_id` |
+| api → web (live) | SSE `GET /api/events/stream` | every audit event is sent as SSE event `audit` (its type is in the JSON data, because browsers only receive event names they subscribed to); `id:` = audit `seq`, so reconnects resume via `Last-Event-ID`; the session is re-checked every keep-alive and the stream ends with `session_ended` after logout or expiry |
 | api → runner (start/resume a run) | dispatch job in PostgreSQL, enqueued **in the same transaction** as the domain change | no dual-write problem; the job library handles retries and locking |
 | api → running graph (pause/stop/approve) | control fields on `research_runs` + `NOTIFY lab_control`; approvals via LangGraph `Command(resume=…)` dispatched as a resume job | see §6.6 |
 | runner ↔ workflow state | LangGraph checkpointer (PostgreSQL) | checkpoint per super-step; resume by `thread_id` |
@@ -666,13 +667,15 @@ agent node ──► ModelRouter.select(role policy, task requirements, privacy 
 |---|---|---|
 | Least privilege | app roles `admin`, `researcher`, `viewer`; per-role tool allowlists for agents; separate DB roles (migrator, app, checkpointer, jobs) | 1–4 |
 | Isolation, file access | pods run as non-root with `readOnlyRootFilesystem` and dropped capabilities where possible; agents have no shell and no filesystem access; code execution only via D-09 sandbox | 1–5 |
-| Secrets | Kubernetes Secrets in the `ai-lab` namespace, created from git-ignored files (`k8s/secret.yaml`, as in the sibling project); DB stores `secret_ref` names, never values | 1 |
+| Secrets | Kubernetes Secrets in the `ai-lab` namespace, created from git-ignored files (`k8s/secret.yaml`, as in the sibling project) and **mounted as files** (`LAB_SECRETS_DIR`, one file per value, e.g. `database__url`), not environment variables; DB stores `secret_ref` names, never values | 1 (mechanism ✅) |
 | Logging and audit | audit log + structured JSON logs with `request_id`, `run_id`, `agent_task_id` | 1 |
 | Input validation | Pydantic at every boundary (HTTP, config, model output, event payloads) | 1+ |
 | Prompt injection | untrusted data in labelled blocks; no side-effecting tools; citation checks in code; regression tests | 4 |
 | Backup and recovery | §14 | 1 (basic), 7 |
 | Global stop | persistent kill switch (§6.6) | 2 |
-| Dashboard access | sessions (argon2id, HttpOnly + SameSite=Strict cookies, CSRF header, persistent login throttling) | 1 |
+| Dashboard access | sessions (argon2id, HttpOnly + SameSite=Strict cookies, CSRF header, persistent login throttling per username and per client IP) | 1 ✅ |
+| Client IP behind proxies | `X-Forwarded-For` honoured only from `api.trusted_proxies` (the nginx pods); read right to left so clients cannot spoof it | 1 ✅ |
+| Browser hardening | nginx sends a strict Content-Security-Policy, `X-Frame-Options: DENY`, `nosniff`, `no-referrer`; nginx version hidden; login redirects accept same-site paths only | 1 ✅ |
 | Encryption in transit | Tailscale (WireGuard) for dashboard access (D-06); internal traffic stays on the cluster network behind NetworkPolicy | 1 |
 | Egress restriction | all outbound traffic through `ModelGateway` / `ToolGateway` with a domain allowlist; plus an egress NetworkPolicy on runner pods | 3–4 |
 | Coexistence with the other project | own namespaces, ResourceQuota, LimitRange, NetworkPolicy, own PostgreSQL and PVCs; no shared credentials (§13.3) | 1 |

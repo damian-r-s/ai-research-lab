@@ -1,10 +1,11 @@
 # Architecture Decisions and Risks
 
-**Status:** v0.5 · **Date:** 2026-11-22
+**Status:** v1.0 · **Last updated:** 2026-11-22
 
 | Status | Meaning |
 |---|---|
 | **DECIDED** | set by the user |
+| **APPROVED** | the architect's proposal, approved by the owner ("Approved", 2026-11-22) |
 | **RECOMMENDED** | the architect's proposal; approval requested |
 | **NEEDS INPUT** | cannot be resolved without the user |
 | **SUPERSEDED** | replaced, kept for history |
@@ -43,9 +44,9 @@
 
 ---
 
-## Recommended (approval requested)
+## Approved recommendations (approved 2026-11-22)
 
-### D-01 — Three persistence concerns in one lab-owned PostgreSQL · RECOMMENDED
+### D-01 — Three persistence concerns in one lab-owned PostgreSQL · APPROVED
 LangGraph checkpoints (schema `langgraph`), the domain record and audit (`lab`), and dispatch jobs
 (`jobs`) live in **one dedicated PostgreSQL StatefulSet in the `ai-lab` namespace, separate from the other project**, with one
 schema and DB role per concern.
@@ -58,7 +59,7 @@ Why:
 Each concern can move to its own instance later through configuration alone. The domain record is
 the source of truth; checkpoints are only for resuming.
 
-### D-02 — LangGraph usage boundaries · RECOMMENDED
+### D-02 — LangGraph usage boundaries · APPROVED
 - Use the **open-source library** only (`langgraph` + `langgraph-checkpoint-postgres`), run inside
   our own runner processes.
 - Do **not** depend on LangGraph Platform, LangGraph Server or other hosted products. Their
@@ -67,7 +68,7 @@ the source of truth; checkpoints are only for resuming.
 - The LangGraph Store is **not** used as the knowledge base. Our knowledge tables carry provenance
   and verification data that the store does not model.
 
-### D-03 — Run dispatch: PostgreSQL-backed job library (Procrastinate) · RECOMMENDED
+### D-03 — Run dispatch: PostgreSQL-backed job library (Procrastinate) · APPROVED
 The requirements review (ARCHITECTURE §7.3) found no need for a message broker. What remains is:
 - dispatching start and resume of runs to runner processes;
 - periodic jobs;
@@ -88,12 +89,12 @@ project's pattern and keeps the job library's own periodic feature optional.
 Re-evaluation triggers are defined in ARCHITECTURE §7.4. If the spike shows Procrastinate does not
 meet A-7, the fallback is Redis + arq, presented for approval first.
 
-### D-04 — Model adapters may wrap LangChain chat-model integrations · RECOMMENDED
+### D-04 — Model adapters may wrap LangChain chat-model integrations · APPROVED
 This gives native LangGraph tool-calling compatibility and many providers without custom HTTP
 clients. Routing, budgets, accounting, caching and privacy enforcement remain in our
 `ModelGateway`, so no framework can spend money outside our limits.
 
-### D-12 — Fate of the pre-approval Phase 1 draft · RECOMMENDED
+### D-12 — Fate of the pre-approval Phase 1 draft · APPROVED and DONE
 Before approval, an **unexecuted** draft was written under `backend/` and `scripts/`:
 - configuration, logging and ids;
 - audit log with hash chain;
@@ -108,13 +109,17 @@ layout (U-7: `backend/src/lab/*` → `src/core/*`, `src/api/*`, …), then revie
 does not conflict with the new decisions, because Phase 1 has no orchestration. Nothing is counted
 as done until it passes the Phase 1 criteria. The alternative is to delete it and start clean.
 
-### D-13 — Python 3.13 · RECOMMENDED
+**Outcome:** the draft was moved into the mirrored layout in Phase 1 step 1, then tested in steps
+2–5. Those tests found and fixed several defects in it, listed in the Phase 1 report in
+IMPLEMENTATION_PLAN.md.
+
+### D-13 — Python 3.13 · APPROVED
 The laptop's system Python 3.14 has no pip. 3.13 has the widest library support. Containers use the
 same version.
 
 ---
 
-## Needs input
+## Other decisions (status per item)
 
 ### D-05 (remainder) — External providers and budgets · NEEDS INPUT LATER (before Phase 4)
 Ollama is the starting point (U-8). Before the first real research workflow, two things need
@@ -124,7 +129,7 @@ quantised models, but generation is slow. That is adequate for classification, e
 embeddings, and doubtful for the analysis quality spec §1 demands. Phase 3 measures real
 throughput and quality, so this decision is made on data.
 
-### D-15 — Ollama: share the host instance or run a lab-owned one · NEEDS INPUT (Phase 3)
+### D-15 — Ollama: share the host instance or run a lab-owned one · APPROVED: option (b), lab-owned
 | Option | For | Against |
 |---|---|---|
 | (a) Share the existing host Ollama (0.34.0, only `llama3.2:3b`) | no extra RAM for a second server; already running | contention with the other project's analyses; pulling models for the lab changes a shared service; one config for both |
@@ -156,7 +161,7 @@ This needs the user's acceptance for copyright reasons.
 Inspection ran as the owner running reviewed read-only commands. For deployment the lab uses a
 deploy identity limited to the `ai-lab*` namespaces (see D-07b).
 
-### D-07b — Lab CI/CD runner · RECOMMENDED (Phase 1)
+### D-07b — Lab CI/CD runner · APPROVED (after the first manual deploy)
 The installed runner is registered to `agentic-trading-intelligence-platform` only. It runs as
 `damian`, which holds a cluster-admin kubeconfig. A runner for one personal-account repository
 cannot serve another repository.
@@ -175,7 +180,7 @@ performs the same steps by hand.
 
 The alternative is no runner, with manual deploys only.
 
-### D-17 — Storage on the server · RECOMMENDED (blocks deployment)
+### D-17 — Storage on the server · APPROVED (owner performs the server change)
 The volume group has **850.8 GB unallocated**; root has 48 GB free.
 
 **Recommendation:**
@@ -200,6 +205,25 @@ The volume group has **850.8 GB unallocated**; root has 48 GB free.
 
 ---
 
+## Implementation decisions (Phase 1)
+
+Engineering decisions taken during implementation, recorded so the reasons stay traceable. None of
+them changes the approved architecture.
+
+| ID | Decision | Reason |
+|---|---|---|
+| I-1 | Configuration is layered: `config/base.toml` < `config/environments/<LAB_ENV>.toml` < secret files < `.env` < `LAB_*` environment variables. Every section rejects unknown keys | hardware and environment values stay out of code; typos fail loudly instead of being silently ignored |
+| I-2 | Secrets are read from **mounted files** (`LAB_SECRETS_DIR`, one file per value), not from environment variables, in staging and production | environment variables leak more easily (process listings, crash dumps, child processes) |
+| I-3 | `X-Forwarded-For` is trusted only from `api.trusted_proxies`, read right to left | behind nginx every request comes from the proxy; without this, five failed logins by anyone would lock out every user |
+| I-4 | Every audit event goes out over SSE under the single event name `audit` | the browser `EventSource` delivers only event names it subscribed to, so per-type names would silently drop new types |
+| I-5 | Lifecycle audit events (`system.process.started`/`stopped`) are best-effort | a database outage must not prevent the API from starting and reporting itself "not ready" |
+| I-6 | NVML is initialised once per process | the first driver initialisation takes about 1.6 s; re-initialising on every 5 s sample wasted that time |
+| I-7 | Frontend uses TypeScript 6.0, not 7.0 | `typescript-eslint` supports TypeScript < 6.1 |
+| I-8 | The dashboard image is `nginx-unprivileged` (non-root, port 8080) instead of the sibling's `nginx:alpine` | least privilege; the same template is tested locally with real nginx in the browser tests |
+| I-9 | Browser tests run against the real API behind the **production nginx template**, not a dev server | they test what will be deployed: headers, proxying, SSE unbuffering |
+
+---
+
 ## Risk Register
 
 | ID | Risk | Impact | Mitigation |
@@ -221,3 +245,5 @@ The volume group has **850.8 GB unallocated**; root has 48 GB free.
 | R-15 | The node's registered IP (`.160`) no longer matches the host's interfaces; host services addressed by IP break | failures like the other project's recent `auto-analysis` jobs (cause unconfirmed) | the lab uses in-cluster Services only; recommend a DHCP reservation or static IP for `alpha` |
 | R-16 | Root filesystem has 48 GB free (images still live there) | deployment failures when it fills | lab data on its own LV (D-17); image tag retention in `deploy.sh`; disk-usage alerts |
 | R-17 | Host services are exposed on the LAN without a firewall (Ollama 11434, k3s API 6443, the other project's PostgreSQL 30432) | unauthorised access from the LAN | the lab adds no LAN exposure; host firewall rules are a separate owner decision (not changed by the lab) |
+| R-18 | Login throttling per username lets an attacker lock a known account (e.g. the admin) for 15 minutes by failing its login on purpose | admin temporarily locked out | the dashboard is reachable only over the owner's tailnet (U-9); revisit before any wider exposure (e.g. CAPTCHA, exponential back-off) |
+| R-19 | A hash chain cannot detect deletion of its newest events | silent loss of the most recent audit entries | export the latest chain hash with every backup and compare on restore (ARCHITECTURE §9.1, Phase 7) |

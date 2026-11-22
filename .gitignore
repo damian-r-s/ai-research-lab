@@ -1,0 +1,39 @@
+# --- Local data and toolchain (never commit) ---
+var/
+.venv/
+**/.venv/
+
+# --- Secrets ---
+.env
+.env.*
+!.env.example
+k8s/secret.yaml
+k8s/**/secret.yaml
+*.pem
+*.key
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+
+# --- Node / frontend ---
+node_modules/
+frontend/dist/
+*.tsbuildinfo
+
+# --- Editors / OS ---
+.vscode/
+.idea/
+.DS_Store
+*.swp
+
+# --- Claude Code local settings ---
+.claude/settings.local.json

@@ -1,0 +1,27 @@
+# Tool configuration only. Dependencies live in requirements*.in / requirements*.txt.
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+extend-exclude = ["var"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "ASYNC", "RUF", "SIM"]
+ignore = ["S101"]
+
+[tool.ruff.lint.per-file-ignores]
+"test/**" = ["S105", "S106"]
+"src/core/databases/migrations/**" = ["E501", "S608"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["src", "scripts"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+plugins = ["pydantic.mypy"]
+exclude = ["^var/"]
+
+[[tool.mypy.overrides]]
+module = ["pynvml"]
+ignore_missing_imports = true  # NVIDIA ships no type information

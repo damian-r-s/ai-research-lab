@@ -1,0 +1,9 @@
+# Laptop development. Database URLs come from scripts/env.sh (machine-specific socket path).
+env = "dev"
+
+[logging]
+level = "DEBUG"
+format = "console"
+
+[auth]
+cookie_secure = false   # plain http://localhost in dev

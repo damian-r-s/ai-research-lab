@@ -1,0 +1,9 @@
+# Automated tests. Test databases are created per test session (test/conftest.py).
+env = "test"
+
+[logging]
+level = "WARNING"
+format = "console"
+
+[auth]
+cookie_secure = false

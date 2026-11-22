@@ -1,0 +1,12 @@
+# Runtime dependencies (ranges). Pinned versions: requirements.txt (uv pip compile).
+fastapi>=0.115
+uvicorn[standard]>=0.32
+pydantic>=2.9
+pydantic-settings>=2.6
+sqlalchemy[asyncio]>=2.0.36
+psycopg[binary,pool]>=3.2
+alembic>=1.14
+argon2-cffi>=23.1
+structlog>=24.4
+psutil>=6.1
+nvidia-ml-py>=12.560

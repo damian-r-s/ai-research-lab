@@ -1,0 +1,14 @@
+# Hardware- and environment-independent defaults. Never put secrets here.
+# Per-environment overrides: config/environments/<LAB_ENV>.toml
+
+[logging]
+level = "INFO"
+format = "json"
+
+[auth]
+session_ttl_hours = 12
+max_failures = 5
+failure_window_minutes = 15
+
+[resources]
+sample_interval_s = 5.0

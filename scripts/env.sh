@@ -9,10 +9,13 @@ if [[ ! -x "$LAB_CONDA_ENV/bin/python" ]]; then
   return 1 2>/dev/null || exit 1
 fi
 export LAB_ROOT LAB_CONDA_ENV
-export PATH="$LAB_ROOT/backend/.venv/bin:$LAB_CONDA_ENV/bin:$PATH"
+export PATH="$LAB_ROOT/.venv/bin:$LAB_CONDA_ENV/bin:$PATH"
+export LAB_ENV="${LAB_ENV:-dev}"
 export LAB_PGDATA="${LAB_PGDATA:-$LAB_ROOT/var/pgdata}"
 export LAB_PGHOST="${LAB_PGHOST:-$LAB_ROOT/var/run}"
 export LAB_PGPORT="${LAB_PGPORT:-55432}"
 # Dev database URLs (local socket, trust auth → no password involved).
 export LAB_DATABASE__URL="${LAB_DATABASE__URL:-postgresql+psycopg://lab_app@/lab?host=$LAB_PGHOST&port=$LAB_PGPORT}"
 export LAB_DATABASE__MIGRATION_URL="${LAB_DATABASE__MIGRATION_URL:-postgresql+psycopg://lab_owner@/lab?host=$LAB_PGHOST&port=$LAB_PGPORT}"
+# Superuser connection used ONLY by the test suite to create and drop throwaway databases.
+export LAB_TEST_ADMIN_URL="${LAB_TEST_ADMIN_URL:-postgresql://lab_admin@/postgres?host=$LAB_PGHOST&port=$LAB_PGPORT}"

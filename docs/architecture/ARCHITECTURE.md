@@ -224,6 +224,8 @@ ai-research-lab/
 ├── Dockerfile                # one backend image, reused by api, runner, CronJobs and the migrate init container
 ├── requirements.txt          # pinned dependencies (generated from requirements.in)
 ├── requirements.in
+├── requirements-dev.in/.txt  # test and lint tools
+├── pyproject.toml            # tool configuration only (ruff, mypy)
 ├── pytest.ini
 ├── .env.example              # template only; .env is git-ignored
 ├── .dockerignore / .gitignore
@@ -245,10 +247,13 @@ ai-research-lab/
 │   │   ├── prompts.py        # prompt assembly (trusted vs. untrusted blocks)
 │   │   └── tools/            # tool gateway + tool implementations
 │   ├── core/
-│   │   ├── config.py, logging.py, security.py, ids.py, errors.py, language.py
-│   │   ├── events/           # audit log: registry, store, hash chain, notifier
+│   │   ├── config.py, logging.py, security.py, ids.py, clock.py, errors.py, language.py (F4)
+│   │   ├── auth/             # login, sessions, users (use cases) + auth event types
+│   │   ├── events/           # audit log: registry, store, hash chain, notifier, system event types
 │   │   └── databases/
-│   │       ├── database.py   # engine and session factory
+│   │       ├── base.py, database.py   # ORM base; engine and session factory
+│   │       ├── models/       # ORM tables (users, events, …)
+│   │       ├── migrate.py, health.py  # programmatic Alembic; readiness check
 │   │       ├── migrations/   # Alembic environment + versions
 │   │       └── repositories/ # one repository per aggregate (users_repo, runs_repo, hypotheses_repo, …)
 │   ├── llm/                  # model gateway, router, accounting, call cache, providers/ (ollama, openai_compatible, …)
@@ -274,6 +279,7 @@ ai-research-lab/
 │   └── ollama.yaml           # only if a lab-owned Ollama is chosen (D-15)
 ├── scripts/
 │   ├── create_user.py        # `kubectl exec … python -m scripts.create_user` (as in the sibling)
+│   ├── migrate.py            # `python -m scripts.migrate upgrade` (also the k3s init container)
 │   ├── deploy.sh             # on the server: git checkout <sha> → podman build → k3s import → kubectl apply → rollout status
 │   ├── dev-db.sh, env.sh     # laptop toolchain (micromamba, no root)
 │   └── server/               # inspect.sh (read-only server inspection)

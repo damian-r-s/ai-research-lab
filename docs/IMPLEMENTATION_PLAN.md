@@ -37,7 +37,17 @@ Exit criterion: the user approves the architecture and the decisions marked *Nee
 - No server change was made during the assessment. This is verified by comparing a `kubectl get
   all,pvc,cm,secret -A -o name` inventory and the `podman images` list before and after.
 
-## Phase 1 — Foundation · ⬜
+## Phase 1 — Foundation · 🟨 in progress
+
+| Step | Content | Status |
+|---|---|---|
+| 1 | Project skeleton in the mirrored layout; draft moved in; app starts; migrations apply; smoke tests | ✅ 4/4 tests pass (2026-11-22) |
+| 2 | Config, logging and migrations (criteria 1.1–1.2) | ⬜ |
+| 3 | Audit log and SSE stream (1.3–1.7, 1.13) | ⬜ |
+| 4 | Login, sessions, roles (1.8–1.10) | ⬜ |
+| 5 | Health and resource monitoring (1.11–1.12, 1.14) | ⬜ |
+| 6 | Dashboard skeleton (1.15) | ⬜ |
+| 7 | k3s manifests and deploy script; server steps (1.16–1.19) | ⬜ |
 **Scope** (repository layout mirrors `agentic-trading-intelligence-platform`, ARCHITECTURE §5):
 - Restructure the existing draft into that layout (root `app.py`, `src/` package, `test/`).
 - Backend: FastAPI app, configuration with environment and hardware profiles, structured logging.
@@ -170,9 +180,9 @@ persistence, restart, limit, stop, model-failure, security and permission tests.
 
 ## Current Implementation State
 - Docs v0.2 written, awaiting approval.
-- An unexecuted Phase 1 draft exists under `backend/` and `scripts/`, written before approval. It is
-  not counted as progress. If kept (D-12), it moves into the mirrored layout at the start of
-  Phase 1.
+- Phase 1 step 1 done: the draft was moved into the mirrored layout (D-12). The moved modules
+  (audit log, auth, resource probes) compile, lint and type-check, but their behaviour is **not
+  tested yet**; that happens in steps 2–5.
 - A dev toolchain is installed in user space on the laptop (micromamba env `ai-lab`).
 - Nothing has been deployed or changed on the server.
 - Server snapshot collected 2026-11-22: [SERVER_ASSESSMENT.md](operations/SERVER_ASSESSMENT.md).

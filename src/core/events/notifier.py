@@ -3,6 +3,10 @@
 Notifications are only hints: subscribers always re-read the table from their last seen seq, and
 also wake up on a timeout, so a lost notification (or a dropped listener connection) delays
 delivery but never loses events.
+
+Race-free waiting: a subscriber reads ``generation`` *before* querying the table and then waits
+for the generation to change. A notification that arrives between the query and the wait has
+already bumped the generation, so the wait returns immediately instead of sleeping.
 """
 
 from __future__ import annotations
@@ -27,6 +31,11 @@ class EventNotifier:
         self._task: asyncio.Task[None] | None = None
         self.connected = asyncio.Event()
 
+    @property
+    def generation(self) -> int:
+        """Increases every time a notification (or reconnect catch-up) arrives."""
+        return self._generation
+
     async def start(self) -> None:
         self._task = asyncio.create_task(self._run(), name="event-notifier")
 
@@ -35,15 +44,23 @@ class EventNotifier:
             self._task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await self._task
+            self._task = None
+        self.connected.clear()
 
-    async def wait(self, max_wait_s: float) -> None:
-        """Return when a new event notification arrives or after `max_wait_s` seconds."""
+    async def wait_for_change(self, since_generation: int, max_wait_s: float) -> bool:
+        """Wait until `generation` differs from `since_generation`, or `max_wait_s` passes.
+
+        Returns True if woken by a change, False on timeout.
+        """
         async with self._cond:
-            start = self._generation
-            with contextlib.suppress(TimeoutError):
+            try:
                 await asyncio.wait_for(
-                    self._cond.wait_for(lambda: self._generation != start), max_wait_s
+                    self._cond.wait_for(lambda: self._generation != since_generation),
+                    max_wait_s,
                 )
+            except TimeoutError:
+                return False
+            return True
 
     async def _wake(self) -> None:
         async with self._cond:

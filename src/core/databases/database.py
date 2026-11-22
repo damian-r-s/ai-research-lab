@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -25,6 +26,13 @@ def create_engine(settings: DatabaseSettings, *, url: str | None = None) -> Asyn
             "options": f"-c statement_timeout={settings.statement_timeout_ms} -c timezone=UTC",
             "application_name": "ai-research-lab",
         },
+    )
+
+
+def libpq_url(sqlalchemy_url: str) -> str:
+    """Convert a `postgresql+psycopg://` SQLAlchemy URL into a plain libpq URL (for psycopg)."""
+    return (
+        make_url(sqlalchemy_url).set(drivername="postgresql").render_as_string(hide_password=False)
     )
 
 

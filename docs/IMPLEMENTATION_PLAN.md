@@ -43,8 +43,8 @@ Exit criterion: the user approves the architecture and the decisions marked *Nee
 |---|---|---|
 | 1 | Project skeleton in the mirrored layout; draft moved in; app starts; migrations apply; smoke tests | ✅ 4/4 tests pass (2026-11-22) |
 | 2 | Config, logging and migrations (criteria 1.1–1.2) | ✅ 29 tests pass (2026-11-22); total suite 33 |
-| 3 | Audit log and SSE stream (1.3–1.7, 1.13) | ⬜ |
-| 4 | Login, sessions, roles (1.8–1.10) | ⬜ |
+| 3 | Audit log and stream engine (1.3–1.7, 1.13 engine part) | ✅ 28 tests pass (2026-11-22); total suite 61. The HTTP `/api/events/stream` endpoint moves to step 4 so it is protected by login from the start |
+| 4 | Login, sessions, roles (1.8–1.10); authenticated event list and SSE endpoints (1.13 HTTP part) | ⬜ |
 | 5 | Health and resource monitoring (1.11–1.12, 1.14) | ⬜ |
 | 6 | Dashboard skeleton (1.15) | ⬜ |
 | 7 | k3s manifests and deploy script; server steps (1.16–1.19) | ⬜ |

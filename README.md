@@ -24,5 +24,6 @@ scripts/dev-db.sh start
 python -m scripts.migrate upgrade
 python main.py                 # API on http://127.0.0.1:8000 (docs: /api/docs)
 python -m pytest               # tests (creates and drops throwaway databases)
+python -m scripts.verify_events  # check the audit log's hash chain
 ruff check . && mypy src scripts test app.py main.py
 ```

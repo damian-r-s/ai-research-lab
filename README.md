@@ -24,5 +24,5 @@ scripts/dev-db.sh start
 python -m scripts.migrate upgrade
 python main.py                 # API on http://127.0.0.1:8000 (docs: /api/docs)
 python -m pytest               # tests (creates and drops throwaway databases)
-ruff check . && mypy src scripts app.py main.py
+ruff check . && mypy src scripts test app.py main.py
 ```

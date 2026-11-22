@@ -17,22 +17,29 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import (
     BaseSettings,
+    NestedSecretsSettingsSource,
     PydanticBaseSettingsSource,
     SettingsConfigDict,
     TomlConfigSettingsSource,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-CONFIG_DIR = Path(os.environ.get("LAB_CONFIG_DIR", REPO_ROOT / "config"))
+DEFAULT_CONFIG_DIR = REPO_ROOT / "config"
 
 Environment = Literal["dev", "test", "staging", "prod"]
 _SERVER_ENVIRONMENTS = ("staging", "prod")
 
 
-class DatabaseSettings(BaseModel):
+class _Section(BaseModel):
+    """Base for config sections: unknown keys (typos) are errors, values are immutable."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class DatabaseSettings(_Section):
     # SQLAlchemy URL used by the running application (least-privilege role).
     url: SecretStr = Field(default=SecretStr("postgresql+psycopg://lab_app@localhost:5432/lab"))
     # URL used for migrations (schema owner). Defaults to `url` when unset.
@@ -54,7 +61,7 @@ class DatabaseSettings(BaseModel):
         return self.migration_url or self.url
 
 
-class AuthSettings(BaseModel):
+class AuthSettings(_Section):
     session_ttl_hours: float = Field(default=12.0, gt=0, le=24 * 30)
     cookie_name: str = Field(default="lab_session", pattern=r"^[A-Za-z0-9_\-]+$")
     cookie_secure: bool = True
@@ -64,19 +71,19 @@ class AuthSettings(BaseModel):
     failure_window_minutes: int = Field(default=15, ge=1)
 
 
-class ApiSettings(BaseModel):
+class ApiSettings(_Section):
     host: str = "127.0.0.1"
     port: int = Field(default=8000, ge=1, le=65535)
     # Header that state-changing requests must carry (custom-header CSRF defence).
     csrf_header: str = "X-Lab-CSRF"
 
 
-class LoggingSettings(BaseModel):
+class LoggingSettings(_Section):
     level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     format: Literal["json", "console"] = "json"
 
 
-class ResourceSettings(BaseModel):
+class ResourceSettings(_Section):
     sample_interval_s: float = Field(default=5.0, ge=0.5)
     # Filesystems to report; the data directory is always included.
     disk_paths: list[str] = Field(default_factory=lambda: ["/"])
@@ -89,8 +96,6 @@ class Settings(BaseSettings):
         env_file=".env",
         extra="forbid",
         frozen=True,
-        # Kubernetes Secret mounted as files: one file per setting, e.g. <dir>/database__url
-        secrets_dir=os.environ.get("LAB_SECRETS_DIR") or None,
     )
 
     env: Environment = "dev"
@@ -119,19 +124,26 @@ class Settings(BaseSettings):
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
+        # Read at construction time (not import time) so tooling and tests can point elsewhere.
+        config_dir = Path(os.environ.get("LAB_CONFIG_DIR", DEFAULT_CONFIG_DIR))
         env_name = os.environ.get("LAB_ENV", "dev")
         # Later files override earlier ones: environment file over base file.
-        toml_files = [
-            path
-            for path in (CONFIG_DIR / "base.toml", CONFIG_DIR / "environments" / f"{env_name}.toml")
-            if path.is_file()
-        ]
-        sources: list[PydanticBaseSettingsSource] = [
-            init_settings,
-            env_settings,
-            dotenv_settings,
-            file_secret_settings,
-        ]
+        candidates = (config_dir / "base.toml", config_dir / "environments" / f"{env_name}.toml")
+        toml_files = [path for path in candidates if path.is_file()]
+        sources: list[PydanticBaseSettingsSource] = [init_settings, env_settings, dotenv_settings]
+        # Kubernetes Secret mounted as a directory: one file per value, named like the env var
+        # without the prefix, e.g. <dir>/database__url. A configured but missing dir is an error.
+        secrets_dir = os.environ.get("LAB_SECRETS_DIR")
+        if secrets_dir:
+            sources.append(
+                NestedSecretsSettingsSource(
+                    file_secret_settings,
+                    secrets_dir=secrets_dir,
+                    secrets_dir_missing="error",
+                    secrets_prefix="",
+                    secrets_nested_delimiter="__",
+                )
+            )
         if toml_files:
             sources.append(TomlConfigSettingsSource(settings_cls, toml_file=toml_files))
         return tuple(sources)

@@ -28,6 +28,22 @@ def _redact(_: Any, __: str, event_dict: MutableMapping[str, Any]) -> MutableMap
     return event_dict
 
 
+class _CurrentStderrHandler(logging.StreamHandler):  # type: ignore[type-arg]
+    """Writes to whatever `sys.stderr` is at emit time, not the object present at configuration.
+
+    Servers and test runners may replace `sys.stderr`; a handler pinned to the old object would
+    silently write to a stream nobody reads.
+    """
+
+    @property
+    def stream(self) -> Any:
+        return sys.stderr
+
+    @stream.setter
+    def stream(self, _value: Any) -> None:
+        pass
+
+
 def configure_logging(settings: LoggingSettings) -> None:
     shared: list[structlog.types.Processor] = [
         structlog.contextvars.merge_contextvars,
@@ -55,7 +71,7 @@ def configure_logging(settings: LoggingSettings) -> None:
             renderer,
         ],
     )
-    handler = logging.StreamHandler(sys.stderr)
+    handler = _CurrentStderrHandler()
     handler.setFormatter(formatter)
     root = logging.getLogger()
     root.handlers[:] = [handler]

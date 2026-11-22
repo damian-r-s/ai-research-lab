@@ -42,7 +42,7 @@ Exit criterion: the user approves the architecture and the decisions marked *Nee
 | Step | Content | Status |
 |---|---|---|
 | 1 | Project skeleton in the mirrored layout; draft moved in; app starts; migrations apply; smoke tests | ✅ 4/4 tests pass (2026-11-22) |
-| 2 | Config, logging and migrations (criteria 1.1–1.2) | ⬜ |
+| 2 | Config, logging and migrations (criteria 1.1–1.2) | ✅ 29 tests pass (2026-11-22); total suite 33 |
 | 3 | Audit log and SSE stream (1.3–1.7, 1.13) | ⬜ |
 | 4 | Login, sessions, roles (1.8–1.10) | ⬜ |
 | 5 | Health and resource monitoring (1.11–1.12, 1.14) | ⬜ |

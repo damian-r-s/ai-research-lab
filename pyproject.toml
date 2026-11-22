@@ -43,6 +43,8 @@ name = "The job library stays behind the dispatch layer"
 type = "forbidden"
 source_modules = ["src.core", "src.api", "src.agents", "src.resources"]
 forbidden_modules = ["procrastinate"]
+# Only direct use is forbidden: reaching the job library through src.runs.dispatch is the design.
+allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
 name = "src.core depends on no other lab package"

@@ -54,7 +54,7 @@ async def _notify(session: AsyncSession, action: ControlAction, run_id: uuid.UUI
     )
 
 
-async def _run_for_update(session: AsyncSession, run_id: uuid.UUID) -> ResearchRun:
+async def lock_run(session: AsyncSession, run_id: uuid.UUID) -> ResearchRun:
     run = await session.scalar(
         select(ResearchRun).where(ResearchRun.id == run_id).with_for_update()
     )
@@ -180,7 +180,7 @@ async def request_pause(
     session: AsyncSession, run_id: uuid.UUID, *, context: EventContext, reason: str | None = None
 ) -> ResearchRun:
     """Queued: paused at once. Running: the runner drains it after the current node (C-1)."""
-    run = await _run_for_update(session, run_id)
+    run = await lock_run(session, run_id)
     if run.status == "paused" or (run.status == "running" and run.pause_requested):
         return run  # already paused or pausing
     if run.status == "queued":
@@ -206,7 +206,7 @@ async def resume(
 ) -> ResearchRun:
     """Paused → queued, and an execution is dispatched (continuing from the last checkpoint)."""
     await _refuse_if_killed(session)
-    run = await _run_for_update(session, run_id)
+    run = await lock_run(session, run_id)
     if run.status != "paused":
         raise ConflictError(f"only a paused run can be resumed (this one is {run.status})")
     await _record_request(session, events.RESUME_REQUESTED.name, run, context, reason)
@@ -220,7 +220,7 @@ async def request_stop(
 ) -> ResearchRun:
     """Idle runs stop at once. A running run becomes `cancel_requested` until its runner
     confirms (or its heartbeat expires): the dashboard shows the two states differently."""
-    run = await _run_for_update(session, run_id)
+    run = await lock_run(session, run_id)
     if run.status in {"stopped", "cancel_requested"}:
         return run
     if run.status in TERMINAL:

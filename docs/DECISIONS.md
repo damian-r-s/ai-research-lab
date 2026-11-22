@@ -271,6 +271,10 @@ them changes the approved architecture.
 | I-24 | Run jobs carry two locks: `thread:<id>` (one execution per thread at a time) and the queueing lock `run:<id>` (one waiting execution per run); the enqueue runs in a savepoint, so a duplicate is reported instead of aborting the caller's transaction | spike A-7; repeated resume clicks queue one execution |
 | I-25 | Starting or resuming a run takes a share lock on the kill-switch row and engaging the switch an exclusive one, always before any run row | no run can start while the switch is being engaged, and the fixed lock order rules out deadlocks (race test) |
 | I-26 | Any SQL that touches Procrastinate's tables directly must set `search_path=jobs`, because the library's trigger functions use unqualified names | found in 2b.2: an update without it fails inside the trigger |
+| I-27 | The executor derives what to invoke the graph with from the checkpoint only: no checkpoint → initial state; pending interrupts → `Command(resume={interrupt_id: answer})` for decided approvals; otherwise `None` (continue). The interrupt payload carries the approval id, so nothing else is stored | one source of truth for where a run is; resuming after a pause, an approval or a crash is the same code path |
+| I-28 | A stop wins: if a stop was requested while a run was pausing or reaching an approval, it ends `stopped`. A cancellation without a stop request (for example a runner shutdown) leaves the run `running` for recovery (2b.4) | a user's stop is never turned into a pause; a shutdown is not mistaken for a stop |
+| I-29 | Built-in graph `lab.selftest` (deterministic, no models): steps, fan-out, bounded review/rework loop, optional approval, injectable failure | verifies the orchestration end to end in tests and on staging/production before any research graph exists |
+| I-30 | A new attempt of a task marks any attempt still open for that task `abandoned`; this is safe because only one execution per thread runs at a time (I-24). The reaper does the same for dead runners (2b.4) | an interrupted attempt is always recorded, even when the next attempt starts before the reaper runs |
 
 ---
 

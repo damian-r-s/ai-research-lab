@@ -86,7 +86,7 @@ class Lab:
 
     async def runner_moves(self, run_id: uuid.UUID, to: str) -> None:
         async with session_scope(self.factory) as s:
-            run = await service._run_for_update(s, run_id)
+            run = await service.lock_run(s, run_id)
             await service.transition(s, run, to, context=RUNNER)
 
     def jobs(self) -> list[tuple[str, ...]]:

@@ -34,6 +34,28 @@ class KillSwitchChanged(EventPayload):
     runs_cancel_requested: int
 
 
+class TaskFinished(EventPayload):
+    run_id: str
+    task_id: str
+    node_path: str
+    attempt_no: int
+    outcome: str
+    error: str | None = None
+
+
+class ApprovalRequested(EventPayload):
+    run_id: str
+    approval_id: str
+    kind: str
+
+
+class ApprovalDecided(EventPayload):
+    run_id: str
+    approval_id: str
+    approved: bool
+    comment: str | None = None
+
+
 RUN_CREATED = register("runs.run.created", 1, RunCreated, "A research run was created and queued")
 PAUSE_REQUESTED = register(
     "runs.run.pause_requested", 1, RunControlRequested, "A pause of a run was requested"
@@ -49,4 +71,11 @@ STATUS_CHANGED = register(
 )
 KILL_SWITCH_CHANGED = register(
     "system.kill_switch.changed", 1, KillSwitchChanged, "The global kill switch was set or released"
+)
+TASK_FINISHED = register("runs.task.finished", 1, TaskFinished, "An attempt of an agent task ended")
+APPROVAL_REQUESTED = register(
+    "runs.approval.requested", 1, ApprovalRequested, "A run asked for a human decision"
+)
+APPROVAL_DECIDED = register(
+    "runs.approval.decided", 1, ApprovalDecided, "A person answered an approval request"
 )

@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 
 from src.core.errors import (
     ConflictError,
+    KillSwitchEngaged,
     LabError,
     NotAuthenticated,
     NotFound,
@@ -20,6 +21,7 @@ _STATUS: dict[type[LabError], int] = {
     PermissionDenied: 403,
     NotFound: 404,
     ConflictError: 409,
+    KillSwitchEngaged: 409,
     TooManyAttempts: 429,
 }
 

@@ -30,3 +30,9 @@ class ConflictError(LabError):
 
 class NotFound(LabError):
     code = "not_found"
+
+
+class KillSwitchEngaged(LabError):
+    """The global kill switch is on: nothing may start or resume."""
+
+    code = "kill_switch_engaged"

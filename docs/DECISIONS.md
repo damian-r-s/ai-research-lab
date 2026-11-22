@@ -267,6 +267,10 @@ them changes the approved architecture.
 | I-20 | Every checkpointer setup grants SELECT on the checkpoint tables to the migration role | the nightly `pg_dump` runs as that role; without the grant the backup fails with "permission denied" (found and tested in 2b.1) |
 | I-21 | The api pod's migrate init container has its own secret volume with the graph role's URL; the long-running api container never receives it | least privilege: only migrations and the runner use the checkpointer role (manifest policy test) |
 | I-22 | The orchestration tables grant the application role no DELETE; the budget ledger is append-only (SELECT, INSERT) and the kill-switch row can only be read and updated | the run and cost record is evidence and is kept |
+| I-23 | Controls act immediately when no runner holds the run: pausing a queued run, or stopping a queued, paused or waiting run, changes its status at once. Only a running run gets `pause_requested` or `cancel_requested` and a `NOTIFY lab_control` to its runner. Every allowed status change is listed in `src/runs/states.py` | a stop never waits for a runner that does not exist; the dashboard can tell "stopping" from "stopped" |
+| I-24 | Run jobs carry two locks: `thread:<id>` (one execution per thread at a time) and the queueing lock `run:<id>` (one waiting execution per run); the enqueue runs in a savepoint, so a duplicate is reported instead of aborting the caller's transaction | spike A-7; repeated resume clicks queue one execution |
+| I-25 | Starting or resuming a run takes a share lock on the kill-switch row and engaging the switch an exclusive one, always before any run row | no run can start while the switch is being engaged, and the fixed lock order rules out deadlocks (race test) |
+| I-26 | Any SQL that touches Procrastinate's tables directly must set `search_path=jobs`, because the library's trigger functions use unqualified names | found in 2b.2: an update without it fails inside the trigger |
 
 ---
 

@@ -35,7 +35,7 @@ include_external_packages = true
 [[tool.importlinter.contracts]]
 name = "Only src.agents imports LangGraph (and its LangChain/LangSmith dependencies)"
 type = "forbidden"
-source_modules = ["src.core", "src.api", "src.resources"]
+source_modules = ["src.core", "src.api", "src.resources", "src.runs"]
 forbidden_modules = ["langgraph", "langchain_core", "langsmith"]
 
 [[tool.importlinter.contracts]]
@@ -48,4 +48,10 @@ forbidden_modules = ["procrastinate"]
 name = "src.core depends on no other lab package"
 type = "forbidden"
 source_modules = ["src.core"]
-forbidden_modules = ["src.api", "src.agents", "src.resources"]
+forbidden_modules = ["src.api", "src.agents", "src.resources", "src.runs"]
+
+[[tool.importlinter.contracts]]
+name = "The run lifecycle does not depend on the API or the graph runtime"
+type = "forbidden"
+source_modules = ["src.runs"]
+forbidden_modules = ["src.api", "src.agents"]

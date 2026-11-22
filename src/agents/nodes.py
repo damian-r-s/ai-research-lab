@@ -11,7 +11,9 @@ from src.agents.context import RunContext
 from src.core.databases.database import session_scope
 from src.core.events.store import Actor, EventContext
 from src.runs import approvals
-from src.runs.tasks import Result, run_task, task_key
+from src.runs.approvals import BUDGET_EXTENSION
+from src.runs.budgets import BudgetExceeded
+from src.runs.tasks import PermanentTaskError, Result, TaskLimits, run_task, task_key
 
 
 async def task(
@@ -22,19 +24,46 @@ async def task(
     fanout_key: str | None = None,
     role_key: str | None = None,
     goal: str | None = None,
+    limits: TaskLimits | None = None,
 ) -> Result:
-    """Run `work` as this graph position's logical task (done at most once, see src.runs.tasks)."""
-    return await run_task(
-        ctx.factory,
-        run_id=ctx.run_id,
-        thread_id=ctx.thread_id,
-        node_path=node_path,
-        work=work,
-        fanout_key=fanout_key,
-        runner_id=ctx.runner_id,
-        role_key=role_key,
-        goal=goal,
-    )
+    """Run `work` as this graph position's logical task (done at most once, see src.runs.tasks).
+
+    If a budget is used up, the run asks for a budget extension and waits (criterion 2.8):
+    approved → the budget was raised by the decision and the task continues; rejected → the task
+    fails permanently.
+    """
+    while True:
+        try:
+            return await run_task(
+                ctx.factory,
+                run_id=ctx.run_id,
+                thread_id=ctx.thread_id,
+                node_path=node_path,
+                work=work,
+                fanout_key=fanout_key,
+                runner_id=ctx.runner_id,
+                role_key=role_key,
+                goal=goal,
+                limits=limits or ctx.limits,
+                slots=ctx.slots,
+            )
+        except BudgetExceeded as exc:
+            # Keyed by the usage at the block: the same block finds the same request on resume,
+            # a later block (after an extension) asks again.
+            answer = await ask_approval(
+                ctx,
+                node_path,
+                kind=BUDGET_EXTENSION,
+                payload={
+                    "budget_id": str(exc.budget_id),
+                    "used": {"attempts": exc.usage.attempts, "seconds": exc.usage.seconds},
+                    "limits": exc.limits.model_dump(exclude_none=True),
+                    "proposed_limits": exc.proposal(),
+                },
+                fanout_key=f"{fanout_key or ''}:budget:{exc.budget_id}:{exc.usage.attempts}",
+            )
+            if not answer.get("approved"):
+                raise PermanentTaskError("the budget extension was rejected") from exc
 
 
 async def ask_approval(

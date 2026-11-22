@@ -14,8 +14,11 @@ Each step commits on its own, so the record survives a crash in the middle of th
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import uuid
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import func, select, update
@@ -28,7 +31,7 @@ from src.core.databases.models.runs import AgentTask, AgentTaskAttempt
 from src.core.events import store
 from src.core.events.store import Actor, EventContext
 from src.core.ids import uuid7
-from src.runs import events
+from src.runs import budgets, events
 
 Result = dict[str, Any]
 
@@ -47,7 +50,14 @@ async def _open_attempt(
     role_key: str | None,
     goal: str | None,
     limits: dict[str, Any],
-) -> tuple[AgentTask, AgentTaskAttempt | None]:
+    budget_check: bool = False,
+) -> tuple[AgentTask, AgentTaskAttempt | None, budgets.BudgetExceeded | None]:
+    """Find or create the task and open its next attempt.
+
+    Returns (task, None, None) if the task already succeeded, and (task, None, exceeded) if a
+    budget is used up; the task is then marked `blocked_budget` and the event recorded here, in
+    this transaction, so the caller only has to raise after commit.
+    """
     now = utcnow()
     await session.execute(
         insert(AgentTask)
@@ -70,7 +80,16 @@ async def _open_attempt(
     )
     assert task is not None
     if task.status == "succeeded":
-        return task, None
+        return task, None, None
+    if budget_check:
+        try:
+            await budgets.check(session, run_id)
+        except budgets.BudgetExceeded as exc:
+            task.status = "blocked_budget"
+            await budgets.record_exceeded(
+                session, run_id, exc, context=EventContext(Actor("agent", node_path))
+            )
+            return task, None, exc
     await session.execute(
         update(AgentTaskAttempt)
         .where(AgentTaskAttempt.agent_task_id == task.id, AgentTaskAttempt.outcome.is_(None))
@@ -92,7 +111,32 @@ async def _open_attempt(
     task.status = "running"
     task.error = None
     await session.flush()
-    return task, attempt
+    return task, attempt, None
+
+
+class TransientTaskError(Exception):
+    """A failure worth retrying (rate limit, temporary outage). Timeouts count as transient."""
+
+
+class PermanentTaskError(Exception):
+    """A failure that a retry cannot fix. Unknown exceptions are treated the same way."""
+
+
+@dataclass(frozen=True, slots=True)
+class TaskLimits:
+    """Per-task limits (criteria 2.7, 2.8). `max_retries` counts retries, not runs (C-8)."""
+
+    timeout_s: float = 600.0
+    max_retries: int = 2
+    backoff_initial_s: float = 1.0
+    backoff_max_s: float = 60.0
+
+    def backoff(self, retry: int) -> float:
+        """Delay before retry number `retry` (1-based): exponential, capped."""
+        return float(min(self.backoff_max_s, self.backoff_initial_s * 2 ** (retry - 1)))
+
+    def as_record(self) -> dict[str, Any]:
+        return {"timeout_s": self.timeout_s, "max_retries": self.max_retries}
 
 
 async def _close(
@@ -105,6 +149,7 @@ async def _close(
     result: Result | None = None,
     error: str | None = None,
 ) -> None:
+    """Close an attempt, update its task, commit its usage to the budgets, audit it: one tx."""
     now = utcnow()
     async with session_scope(factory) as session:
         task = await session.get(AgentTask, task_id, with_for_update=True)
@@ -112,10 +157,13 @@ async def _close(
         assert task is not None and attempt is not None
         attempt.outcome, attempt.ended_at, attempt.error = outcome, now, error
         task.status, task.error = task_status, error
+        seconds = (now - attempt.started_at).total_seconds()
+        task.compute_seconds = Decimal(task.compute_seconds or 0) + Decimal(str(round(seconds, 3)))
         if result is not None:
             task.result_refs = result
         if task_status in {"succeeded", "failed", "cancelled"}:
             task.ended_at = now
+        await budgets.commit_attempt(session, task.run_id, attempt.id, seconds)
         await store.append(
             session,
             type_=events.TASK_FINISHED.name,
@@ -133,6 +181,10 @@ async def _close(
         )
 
 
+def _error_text(exc: BaseException) -> str:
+    return f"{type(exc).__name__}: {exc}" if str(exc) else type(exc).__name__
+
+
 async def run_task(
     factory: async_sessionmaker[AsyncSession],
     *,
@@ -144,43 +196,89 @@ async def run_task(
     runner_id: uuid.UUID | None = None,
     role_key: str | None = None,
     goal: str | None = None,
-    limits: dict[str, Any] | None = None,
+    limits: TaskLimits | None = None,
+    slots: asyncio.Semaphore | None = None,
 ) -> Result:
-    """Run `work` as the logical task at this graph position, at most once successfully."""
+    """Run `work` as the logical task at this graph position, at most once successfully.
+
+    Each attempt: budget check → parallelism slot → work under the time limit → recorded outcome.
+    Transient errors and timeouts are retried with backoff up to `limits.max_retries`; any other
+    error fails the task at once. A used-up budget raises `BudgetExceeded` (task `blocked_budget`).
+    """
+    limits = limits or TaskLimits()
     key = task_key(thread_id, node_path, fanout_key)
-    async with session_scope(factory) as session:
-        task, attempt = await _open_attempt(
-            session,
-            run_id=run_id,
-            key=key,
-            node_path=node_path,
-            runner_id=runner_id,
-            role_key=role_key,
-            goal=goal,
-            limits=limits or {},
-        )
-        if attempt is None:  # finished before a crash: reuse, never redo
-            return dict(task.result_refs or {})
-        task_id, attempt_id = task.id, attempt.id
-    try:
-        result = await work()
-    except asyncio.CancelledError:
-        # A stop: record it even though this task is being cancelled, then keep cancelling.
-        await asyncio.shield(
-            _close(factory, task_id, attempt_id, outcome="cancelled", task_status="cancelled")
-        )
-        raise
-    except Exception as exc:
+
+    async def attempt_once(retry: int) -> tuple[bool, Result]:
+        """One attempt. Returns (True, result) when done, (False, {}) when it should be retried;
+        raises for a used-up budget, a permanent failure or the last failed retry."""
+        async with session_scope(factory) as session:
+            task, attempt, exceeded = await _open_attempt(
+                session,
+                run_id=run_id,
+                key=key,
+                node_path=node_path,
+                runner_id=runner_id,
+                role_key=role_key,
+                goal=goal,
+                limits=limits.as_record(),
+                budget_check=True,
+            )
+            result_refs = dict(task.result_refs or {})
+            task_id = task.id
+            attempt_id = attempt.id if attempt is not None else None
+        if exceeded is not None:
+            raise exceeded  # recorded and committed above: task blocked_budget, event appended
+        if attempt_id is None:  # finished before a crash: reuse, never redo
+            return True, result_refs
+        try:
+            async with asyncio.timeout(limits.timeout_s):
+                result = await work()
+        except asyncio.CancelledError:
+            # A stop: record it even though this task is being cancelled, then keep cancelling.
+            await asyncio.shield(
+                _close(factory, task_id, attempt_id, outcome="cancelled", task_status="cancelled")
+            )
+            raise
+        except (TransientTaskError, TimeoutError) as exc:
+            timed_out = isinstance(exc, TimeoutError)
+            final = retry >= limits.max_retries
+            await _close(
+                factory,
+                task_id,
+                attempt_id,
+                outcome="timed_out" if timed_out else "failed",
+                task_status="failed" if final else "running",
+                error=f"timed out after {limits.timeout_s} s" if timed_out else _error_text(exc),
+            )
+            if final:
+                raise
+            return False, {}
+        except Exception as exc:
+            await _close(
+                factory,
+                task_id,
+                attempt_id,
+                outcome="failed",
+                task_status="failed",
+                error=_error_text(exc),
+            )
+            raise
         await _close(
             factory,
             task_id,
             attempt_id,
-            outcome="failed",
-            task_status="failed",
-            error=f"{type(exc).__name__}: {exc}",
+            outcome="succeeded",
+            task_status="succeeded",
+            result=result,
         )
-        raise
-    await _close(
-        factory, task_id, attempt_id, outcome="succeeded", task_status="succeeded", result=result
-    )
-    return result
+        return True, result
+
+    retry = 0
+    while True:
+        # The slot covers the attempt only (its record, budget check and work), not the backoff.
+        async with slots if slots is not None else contextlib.nullcontext():
+            done, result = await attempt_once(retry)
+        if done:
+            return result
+        retry += 1
+        await asyncio.sleep(limits.backoff(retry))

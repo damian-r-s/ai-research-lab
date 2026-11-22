@@ -56,6 +56,20 @@ class ApprovalDecided(EventPayload):
     comment: str | None = None
 
 
+class BudgetExceededEvent(EventPayload):
+    run_id: str
+    budget_id: str
+    used_attempts: int
+    used_seconds: float
+    limits: dict[str, Any]
+
+
+class BudgetExtended(EventPayload):
+    run_id: str
+    budget_id: str
+    limits: dict[str, Any]
+
+
 RUN_CREATED = register("runs.run.created", 1, RunCreated, "A research run was created and queued")
 PAUSE_REQUESTED = register(
     "runs.run.pause_requested", 1, RunControlRequested, "A pause of a run was requested"
@@ -78,4 +92,10 @@ APPROVAL_REQUESTED = register(
 )
 APPROVAL_DECIDED = register(
     "runs.approval.decided", 1, ApprovalDecided, "A person answered an approval request"
+)
+BUDGET_EXCEEDED = register(
+    "runs.budget.exceeded", 1, BudgetExceededEvent, "A run used up a budget and was blocked"
+)
+BUDGET_EXTENDED = register(
+    "runs.budget.extended", 1, BudgetExtended, "A budget was raised after an approval"
 )

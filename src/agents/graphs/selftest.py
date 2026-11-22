@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import operator
+from dataclasses import replace
 from typing import Annotated, Any, TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -19,6 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from src.agents import registry
 from src.agents.context import RunContext
 from src.agents.nodes import ask_approval, bounded, task
+from src.runs.tasks import TransientTaskError
 
 KEY, VERSION = "lab.selftest", "1"
 MAX_REWORK_CYCLES = 2  # the configured loop bound (ARCHITECTURE §6.2); tests use review_rejections
@@ -34,7 +36,12 @@ class SelftestParams(BaseModel):
         default=0, ge=0, le=100
     )  # how often the reviewer asks for rework
     approval: bool = False
-    fail_at_step: int | None = Field(default=None, ge=1)  # deterministic failure, for tests
+    fail_at_step: int | None = Field(default=None, ge=1)  # permanent failure, for tests
+    # Transient failures: the step fails this many times, then succeeds (retries, 2.7).
+    transient_failures_at_step: int | None = Field(default=None, ge=1)
+    transient_failures: int = Field(default=0, ge=0, le=20)
+    hang_at_step: int | None = Field(default=None, ge=1)  # never finishes: hits the time limit
+    task_timeout_s: float | None = Field(default=None, gt=0, le=3600)  # per-task override
 
 
 class State(TypedDict, total=False):
@@ -84,12 +91,22 @@ async def probe(inp: ProbeInput, runtime: Runtime[RunContext]) -> dict[str, Any]
 async def step(state: State, runtime: Runtime[RunContext]) -> dict[str, Any]:
     p, n = _p(state), state.get("steps_done", 0) + 1
 
+    calls = 0
+
     async def work() -> dict[str, Any]:
+        nonlocal calls
+        calls += 1
         if p.fail_at_step == n:
             raise RuntimeError(f"selftest failure requested at step {n}")
+        if p.transient_failures_at_step == n and calls <= p.transient_failures:
+            raise TransientTaskError(f"selftest transient failure {calls} at step {n}")
+        if p.hang_at_step == n:
+            await asyncio.sleep(3600)
         return await _work(p, {"step": n})
 
-    await task(runtime.context, "step", work, fanout_key=str(n))
+    ctx = runtime.context
+    limits = replace(ctx.limits, timeout_s=p.task_timeout_s) if p.task_timeout_s else None
+    await task(ctx, "step", work, fanout_key=str(n), limits=limits)
     return {"steps_done": n, "log": [f"step {n}"]}
 
 

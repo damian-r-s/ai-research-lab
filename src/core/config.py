@@ -110,6 +110,18 @@ class ResourceSettings(_Section):
     expect_gpu: bool = False
 
 
+class LimitSettings(_Section):
+    """Default limits of agent tasks and runs (criteria 2.7, 2.8). Nodes may override per task."""
+
+    task_timeout_s: float = Field(default=600.0, gt=0, le=86_400)
+    # Retries after the first attempt (DECISIONS C-8: retries, not runs). Only transient errors
+    # and timeouts are retried; permanent and unknown errors are not.
+    max_retries: int = Field(default=2, ge=0, le=20)
+    backoff_initial_s: float = Field(default=1.0, ge=0, le=3600)
+    backoff_max_s: float = Field(default=60.0, ge=0, le=3600)
+    run_parallelism: int = Field(default=4, ge=1, le=64)  # tasks of one run executing at once
+
+
 class RunnerSettings(_Section):
     """Runner processes (ARCHITECTURE §3.2, DECISIONS C-3)."""
 
@@ -152,6 +164,7 @@ class Settings(BaseSettings):
     logging: LoggingSettings = LoggingSettings()
     resources: ResourceSettings = ResourceSettings()
     runner: RunnerSettings = RunnerSettings()
+    limits: LimitSettings = LimitSettings()
 
     @model_validator(mode="after")
     def _server_guards(self) -> Settings:

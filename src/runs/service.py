@@ -28,6 +28,7 @@ from src.core.events import store
 from src.core.events.store import EventContext
 from src.core.ids import uuid7
 from src.runs import events
+from src.runs.budgets import BudgetLimits, create_run_budget
 from src.runs.dispatch import Dispatcher
 from src.runs.states import IDLE, TERMINAL, can_transition
 
@@ -128,9 +129,11 @@ async def start_run(
     params: dict[str, Any],
     context: EventContext,
     dispatcher: Dispatcher,
+    budget: BudgetLimits | None = None,
 ) -> ResearchRun:
     await _refuse_if_killed(session)
     run_id = uuid7()
+    budget_row = await create_run_budget(session, budget) if budget else None
     run = ResearchRun(
         id=run_id,
         thread_id=f"run-{run_id}",
@@ -142,6 +145,7 @@ async def start_run(
         created_by=_actor_label(context),
         created_at=utcnow(),
         version=1,
+        budget_id=budget_row.id if budget_row else None,
     )
     session.add(run)
     await session.flush()

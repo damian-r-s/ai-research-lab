@@ -36,12 +36,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from src.agents import graphs as _builtin_graphs  # noqa: F401  # registers built-ins
 from src.agents import registry
 from src.agents.context import RunContext
+from src.core.config import LimitSettings
 from src.core.databases.database import session_scope
 from src.core.errors import NotFound
 from src.core.events.store import Actor, EventContext
 from src.core.logging import get_logger
-from src.runs import approvals, service
+from src.runs import approvals, budgets, service
 from src.runs.dispatch import Dispatcher
+from src.runs.tasks import TaskLimits
 
 log = get_logger(__name__)
 
@@ -75,8 +77,10 @@ class RunExecution:
         checkpointer: BaseCheckpointSaver[Any],
         runner_id: uuid.UUID | None = None,
         dispatcher: Dispatcher | None = None,
+        limits: LimitSettings | None = None,
     ) -> None:
         self.run_id = run_id
+        self._limits = limits or LimitSettings()
         self._dispatcher = dispatcher
         self._factory = factory
         self._checkpointer = checkpointer
@@ -133,6 +137,25 @@ class RunExecution:
             await service.transition(session, run, outcome.value, context=self._actor)
             return outcome
 
+    async def _context(self, thread_id: str) -> RunContext:
+        cfg = self._limits
+        async with self._factory() as session:
+            budget_parallel = await budgets.parallel_limit(session, self.run_id)
+        parallel = min(cfg.run_parallelism, budget_parallel or cfg.run_parallelism)
+        return RunContext(
+            self.run_id,
+            thread_id,
+            self._factory,
+            self._runner_id,
+            limits=TaskLimits(
+                timeout_s=cfg.task_timeout_s,
+                max_retries=cfg.max_retries,
+                backoff_initial_s=cfg.backoff_initial_s,
+                backoff_max_s=cfg.backoff_max_s,
+            ),
+            slots=asyncio.Semaphore(parallel),
+        )
+
     async def _graph_input(
         self, graph: Any, config: RunnableConfig, initial: dict[str, Any]
     ) -> Any:
@@ -163,7 +186,7 @@ class RunExecution:
             "configurable": {"thread_id": thread_id},
             "recursion_limit": RECURSION_LIMIT,
         }
-        context = RunContext(self.run_id, thread_id, self._factory, self._runner_id)
+        context = await self._context(thread_id)
         try:
             await graph.ainvoke(
                 await self._graph_input(graph, config, initial),

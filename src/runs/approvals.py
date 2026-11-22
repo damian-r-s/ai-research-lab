@@ -23,9 +23,11 @@ from src.core.errors import ConflictError, NotFound
 from src.core.events import store
 from src.core.events.store import EventContext
 from src.core.ids import uuid7
-from src.runs import events, service
+from src.runs import budgets, events, service
 from src.runs.dispatch import Dispatcher
 from src.runs.states import TERMINAL
+
+BUDGET_EXTENSION = "budget_extension"
 
 
 async def request_approval(
@@ -106,6 +108,15 @@ async def decide(
         aggregate_type="research_run",
         aggregate_id=str(run.id),
     )
+    if approved and approval.kind == BUDGET_EXTENSION:
+        # Applied here, in the decision's transaction: exactly once, whatever the graph does.
+        await budgets.extend(
+            session,
+            uuid.UUID(approval.request_payload["budget_id"]),
+            approval.request_payload["proposed_limits"],
+            run_id=run.id,
+            context=context,
+        )
     if run.status == "awaiting_approval":
         await service.transition(session, run, "queued", context=context, reason="approval decided")
         await dispatcher.enqueue_run(session, run_id=run.id, thread_id=run.thread_id)

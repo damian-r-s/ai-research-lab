@@ -111,6 +111,7 @@ class Runner:
             checkpointer=self._saver,
             runner_id=self.id,
             dispatcher=self.dispatcher,
+            limits=self.settings.limits,
         )
         inner = asyncio.create_task(execution.execute(), name=f"run:{run_id}")
         self.active[run_id] = _Active(execution, inner)

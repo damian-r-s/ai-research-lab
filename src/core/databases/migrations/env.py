@@ -19,8 +19,13 @@ def _url() -> str:
     return explicit or get_settings().database.effective_migration_url().get_secret_value()
 
 
-def _app_role() -> str:
-    return config.attributes.get("app_role") or get_settings().database.app_role
+def _roles() -> dict[str, str]:
+    """Roles that migrations grant to: passed to every migration's upgrade()/downgrade()."""
+    db = get_settings().database
+    return {
+        "app_role": config.attributes.get("app_role") or db.app_role,
+        "graph_role": config.attributes.get("graph_role") or db.graph_role,
+    }
 
 
 def run_migrations_offline() -> None:
@@ -32,7 +37,7 @@ def run_migrations_offline() -> None:
         include_schemas=True,
     )
     with context.begin_transaction():
-        context.run_migrations(app_role=_app_role())
+        context.run_migrations(**_roles())
 
 
 def _include_name(name: str | None, type_: Any, parent_names: Any) -> bool:
@@ -55,7 +60,7 @@ def run_migrations_online() -> None:
             transaction_per_migration=True,
         )
         with context.begin_transaction():
-            context.run_migrations(app_role=_app_role())
+            context.run_migrations(**_roles())
     engine.dispose()
 
 

@@ -1,7 +1,7 @@
 # Phase 2a Spike Findings: LangGraph, Checkpointer and Procrastinate
 
 **Audience:** the owner, who decides go or no-go for step 2b. **Date:** 2026-11-22.
-**Status:** spike complete on the laptop; **waiting for the owner's decision**.
+**Status:** spike complete. **Decision: GO, with C-1 to C-8 approved by the owner on 2026-11-22** (DECISIONS).
 
 The spike tests ARCHITECTURE §16 assumptions A-1 to A-8 with throwaway graphs whose nodes are
 deterministic (no LLM calls). It also adds A-9, a LangGraph feature found during the spike. All test

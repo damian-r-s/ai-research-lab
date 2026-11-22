@@ -38,7 +38,8 @@ spec:
           envFrom:
             - configMapRef: { name: lab-env }  # LAB_ENV etc., generated per overlay
           volumeMounts:
-            - { name: secrets, mountPath: /run/secrets/lab, readOnly: true }
+            # Its own secret set: the checkpointer role is needed for migrations only, never by the api.
+            - { name: migrate-secrets, mountPath: /run/secrets/lab, readOnly: true }
             - { name: tmp, mountPath: /tmp }
           securityContext:
             allowPrivilegeEscalation: false
@@ -85,6 +86,14 @@ spec:
             items:
               - { key: database__url, path: database__url }
               - { key: database__migration_url, path: database__migration_url }
+        - name: migrate-secrets
+          secret:
+            secretName: lab-secrets
+            defaultMode: 0440
+            items:
+              - { key: database__url, path: database__url }
+              - { key: database__migration_url, path: database__migration_url }
+              - { key: database__graph_url, path: database__graph_url }
         - { name: tmp, emptyDir: {} }
         - name: lab-volume
           hostPath: { path: /srv/ai-lab, type: Directory }

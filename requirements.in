@@ -10,3 +10,8 @@ argon2-cffi>=23.1
 structlog>=24.4
 psutil>=6.1
 nvidia-ml-py>=12.560
+# Orchestration (Phase 2, DECISIONS D-02/D-03; confirmed by the 2a spike).
+# Upgrading procrastinate needs a migration (test_procrastinate_schema_is_pinned).
+langgraph>=1.2
+langgraph-checkpoint-postgres>=3.2
+procrastinate>=3.12

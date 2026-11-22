@@ -10,12 +10,16 @@ data:
     set -euo pipefail
     owner_pw="$(cat /run/secrets/pg/owner-password)"
     app_pw="$(cat /run/secrets/pg/app-password)"
+    graph_pw="$(cat /run/secrets/pg/graph-password)"
     psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
-         -v owner_pw="$owner_pw" -v app_pw="$app_pw" <<'SQL'
+         -v owner_pw="$owner_pw" -v app_pw="$app_pw" -v graph_pw="$graph_pw" <<'SQL'
     CREATE ROLE lab_owner LOGIN PASSWORD :'owner_pw';
     CREATE ROLE lab_app LOGIN PASSWORD :'app_pw';
+    -- LangGraph checkpointer: confined to schema langgraph (DECISIONS C-6)
+    CREATE ROLE lab_graph LOGIN PASSWORD :'graph_pw';
     GRANT CREATE ON DATABASE lab TO lab_owner;
     GRANT CONNECT ON DATABASE lab TO lab_app;
+    GRANT CONNECT ON DATABASE lab TO lab_graph;
     REVOKE CREATE ON SCHEMA public FROM PUBLIC;
     SQL
 ---
@@ -93,6 +97,7 @@ spec:
               - { key: superuser-password, path: superuser-password }
               - { key: owner-password, path: owner-password }
               - { key: app-password, path: app-password }
+              - { key: graph-password, path: graph-password }
         - { name: run, emptyDir: {} }
         - { name: tmp, emptyDir: {} }
   volumeClaimTemplates:

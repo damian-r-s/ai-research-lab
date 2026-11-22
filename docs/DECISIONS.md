@@ -69,7 +69,7 @@ the source of truth; checkpoints are only for resuming.
 - The LangGraph Store is **not** used as the knowledge base. Our knowledge tables carry provenance
   and verification data that the store does not model.
 
-### D-03 — Run dispatch: PostgreSQL-backed job library (Procrastinate) · APPROVED
+### D-03 — Run dispatch: PostgreSQL-backed job library (Procrastinate) · APPROVED, CONFIRMED by the Phase 2a spike
 The requirements review (ARCHITECTURE §7.3) found no need for a message broker. What remains is:
 - dispatching start and resume of runs to runner processes;
 - periodic jobs;
@@ -89,6 +89,9 @@ project's pattern and keeps the job library's own periodic feature optional.
 
 Re-evaluation triggers are defined in ARCHITECTURE §7.4. If the spike shows Procrastinate does not
 meet A-7, the fallback is Redis + arq, presented for approval first.
+
+**Spike result (2026-11-22):** A-7 holds (SPIKE_2A_FINDINGS.md). Procrastinate stays, with the
+stalled-job reaper from C-3.
 
 ### D-04 — Model adapters may wrap LangChain chat-model integrations · APPROVED
 This gives native LangGraph tool-calling compatibility and many providers without custom HTTP
@@ -206,6 +209,28 @@ The volume group has **850.8 GB unallocated**; root has 48 GB free.
 
 ---
 
+## Phase 2a outcome · GO, approved by the owner on 2026-11-22
+Step 2b proceeds with LangGraph OSS, its PostgreSQL checkpointer and Procrastinate. The owner
+approved the design changes found by the spike
+([SPIKE_2A_FINDINGS.md](architecture/SPIKE_2A_FINDINGS.md)). They are applied in ARCHITECTURE.
+
+| ID | Decision | From |
+|---|---|---|
+| C-1 | Pause uses `RunControl.request_drain()`: the runner that owns the run drains it, and the run stops after the current node with its checkpoint saved. There is no per-node guard calling `interrupt()`. `interrupt()` is used only for approvals | A-9 |
+| C-2 | All graph nodes, tools and gateways are `async`. A test rejects any registered graph containing a synchronous node. Blocking work goes behind an async interface with its own cancellation, or into a subprocess | A-5 |
+| C-3 | A stalled-job reaper runs as a Procrastinate periodic job inside the runners. It retries jobs whose worker heartbeat has expired and marks their open attempts `abandoned`. Heartbeat interval, stall timeout and reaper interval are configuration | A-7 |
+| C-4 | Every run is invoked with `durability="sync"` | A-1 |
+| C-5 | Code before an `interrupt()` must be idempotent; an approval request is an upsert keyed by its task | A-4 |
+| C-6 | Each library connection sets its own schema: the checkpointer uses `search_path=langgraph` as role `lab_graph`, and Procrastinate uses `search_path=jobs`. A transactional enqueue sets `SET LOCAL search_path` on the domain session | A-6, A-7 |
+| C-7 | Every schema is created by `scripts.migrate`: the Procrastinate schema is an Alembic migration; the checkpointer's `setup()` runs afterwards as `lab_graph` over an autocommit connection | A-6 |
+| C-8 | Retry limits in lab configuration are named `max_retries`. Procrastinate's `max_attempts` counts retries, not runs | A-7 |
+
+**Order:** the owner extended the exception to spec §19.16: step 2b is built on the laptop
+**before** Phase 1 passes its server criteria 1.16–1.19. Phase 1 stays 🟨 until they pass, and the
+first server deployment then includes the Phase 2 workloads (criterion 2.12).
+
+---
+
 ## Implementation decisions (Phase 1)
 
 Engineering decisions taken during implementation, recorded so the reasons stay traceable. None of
@@ -230,6 +255,18 @@ them changes the approved architecture.
 | I-15 | The runner's only root privilege is `/usr/local/sbin/ai-lab-image`, which inspects each image archive and imports or removes only `localhost/ai-lab-{api,frontend}:<sha>` | a plain sudo rule for `k3s ctr` would let a crafted archive replace the other project's images |
 | I-16 | Production deploys are a **manual workflow run** (`workflow_dispatch`), not a GitHub "environment" with required reviewers | required reviewers on private repositories need a paid GitHub plan; the manual trigger gives the same control for free, and `deploy.sh` still requires the commit to be verified on staging |
 | I-17 | The runner's kubeconfig uses the `lab-deployer` ServiceAccount: write access to lab objects in the two lab namespaces, read-only on three cluster objects, no RBAC changes, Secrets limited to an existence check of `lab-secrets` | least privilege; unlike the existing runner, it cannot affect the other project |
+
+---
+
+## Implementation decisions (Phase 2)
+
+| ID | Decision | Reason |
+|---|---|---|
+| I-18 | Schema `langgraph` is created by the migration role and owned by it; the graph role gets only USAGE and CREATE on it, and creates the checkpoint tables itself | the migration role cannot create a schema owned by another role; the graph role still reaches nothing outside its schema (test_orchestration_schema.py) |
+| I-19 | The Procrastinate schema is applied from the library's own `schema.sql` in migration 0002, pinned to the installed version | one place for all schema changes (C-7); a test fails when the library is upgraded without a new migration |
+| I-20 | Every checkpointer setup grants SELECT on the checkpoint tables to the migration role | the nightly `pg_dump` runs as that role; without the grant the backup fails with "permission denied" (found and tested in 2b.1) |
+| I-21 | The api pod's migrate init container has its own secret volume with the graph role's URL; the long-running api container never receives it | least privilege: only migrations and the runner use the checkpointer role (manifest policy test) |
+| I-22 | The orchestration tables grant the application role no DELETE; the budget ledger is append-only (SELECT, INSERT) and the kill-switch row can only be read and updated | the run and cost record is evidence and is kept |
 
 ---
 

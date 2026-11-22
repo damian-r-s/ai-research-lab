@@ -87,28 +87,45 @@ Exit criterion: the user approves the architecture and the decisions marked *Nee
 | 1.18 | A backup restores into a scratch DB and the audit chain verifies there | server | ⬜ step 7 |
 | 1.19 | Pod deletion and server reboot: the lab comes back on its own and no data is lost | server | ⬜ step 7 |
 
-## Phase 2 — LangGraph orchestration, runs and dispatch · 🟨 step 2a in progress
+## Phase 2 — LangGraph orchestration, runs and dispatch · 🟨 step 2b in progress
 **Recorded exception to spec §19.16 (owner's instruction, 2026-11-22):** step 2a started before
 Phase 1 passed its server criteria 1.16–1.19. The spike runs on the laptop only, adds no runtime
 dependency to the deployed images (its libraries are dev-only until go/no-go) and changes no
-Phase 1 code. Phase 1 stays 🟨 until 1.16–1.19 pass, and **step 2b does not start before that**.
+Phase 1 code. Phase 1 stays 🟨 until 1.16–1.19 pass.
+
+**Exception extended (owner's decision, 2026-11-22, after the spike):** step 2b is also built on
+the laptop before Phase 1 passes on the server. The first server deployment then includes the
+Phase 2 workloads, and criterion 2.12 is checked there. Risk: problems found at the first
+deployment may require rework in 2b code.
 
 **Step 2a, evaluation spike.** Verify assumptions A-1 to A-8 (ARCHITECTURE §16) with automated
 tests on throwaway graphs, then write a short findings report. **The user decides go or no-go
 before step 2b.** If an assumption fails, the design is revised and presented first.
 
-**Step 2a status (2026-11-22): ✅ spike complete, waiting for the owner's go/no-go.** Findings,
-proposed design changes C-1 to C-8 and the recommendation are in
+**Step 2a status (2026-11-22): ✅ complete. GO approved by the owner, with design changes C-1 to
+C-8 (DECISIONS).** Findings are in
 [SPIKE_2A_FINDINGS.md](architecture/SPIKE_2A_FINDINGS.md). 24 spike tests are in `test/spike/`
 (criterion 2.1 met for the laptop; the staging run is part of 2.12).
 
-**Step 2b, implementation:**
+**Step 2b, implementation steps** (each ends with its tests passing and a short report):
+
+| Step | Content | Criteria | Status |
+|---|---|---|---|
+| 2b.1 | Runtime dependencies; `lab_graph` role (dev, k3s init, secrets); schemas `jobs` and `langgraph` and the Phase 2 domain tables via `scripts.migrate` (C-6, C-7); backups can read checkpoints; import-linter boundaries | 2.10 | ✅ 22 new tests pass (2026-11-22); backend suite 203, browser tests 12. Runner settings move to 2b.4, where they are first used |
+| 2b.2 | Run lifecycle service (`src/runs`, framework-free): start, pause, resume, stop, kill switch; status machine; audit events; transactional dispatch | 2.4, 2.5 (service part) | ⬜ next |
+| 2b.3 | Graph runtime (`src/agents`): executor with `durability="sync"`, drain-based pause, cancellation, idempotent task records and attempts, approvals via `interrupt()`, bounded loops, async-only check (C-1, C-2, C-4, C-5) | 2.5, 2.6, 2.9 | ⬜ |
+| 2b.4 | Runner process (`src/services/runner.py`): Procrastinate worker, runner heartbeats, control channel, stalled-job reaper (C-3), checkpoint pruning | 2.2, 2.3, 2.4, 2.11 | ⬜ |
+| 2b.5 | Limits and budgets: time, attempts, parallelism, retries (C-8); `blocked_budget` with an approval request | 2.7, 2.8 | ⬜ |
+| 2b.6 | API and dashboard: runs and tasks views, approvals, control buttons wired to real effects; browser tests | 2.4–2.6 (UI part) | ⬜ |
+| 2b.7 | k3s: runner Deployment, network policy and quota updates; first server deployment with Phase 1 | 2.12 | ⬜ |
+
+**Step 2b scope:**
 - LangGraph Postgres checkpointer in its own schema and with its own DB role.
 - Job library (D-03) for run dispatch and periodic jobs.
 - Domain tables: `research_runs`, `agent_tasks`, `agent_task_attempts`, `approvals`, `budgets`,
   `budget_ledger`, `system_state`, `runners`.
 - Run lifecycle service: start, pause, resume, stop, kill switch.
-- Node guard for pause and stop.
+- Pause through `RunControl.request_drain()` (C-1); stop through task cancellation.
 - Human-in-the-loop approvals via `interrupt()`.
 - Time, attempt and parallelism limits; budget framework (model costs come in Phase 3).
 - Runner Deployment with heartbeats; CronJobs that enqueue periodic ticks.

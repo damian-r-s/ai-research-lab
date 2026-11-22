@@ -263,3 +263,27 @@ def test_deployer_can_do_everything_deploy_applies() -> None:
     }
     kinds = {d["kind"] for env in ENVIRONMENTS for d in render(env)}
     assert {resource_of[k] for k in kinds} <= writable, kinds
+
+
+def test_only_the_migrate_container_gets_the_checkpointer_credentials(
+    manifests: tuple[str, list[dict[str, Any]]],
+) -> None:
+    """Least privilege (DECISIONS C-6): the api never needs the graph role's password."""
+    _, docs = manifests
+    api = next(d for d in docs if d["kind"] == "Deployment" and d["metadata"]["name"] == "api")
+    spec = pod_spec(api)
+    keys_by_volume = {
+        v["name"]: {i["key"] for i in v["secret"].get("items", [])}
+        for v in spec["volumes"]
+        if "secret" in v
+    }
+
+    def secret_keys(container: dict[str, Any]) -> set[str]:
+        return set().union(
+            *(keys_by_volume.get(m["name"], set()) for m in container.get("volumeMounts", []))
+        )
+
+    (migrate,) = spec["initContainers"]
+    (main,) = spec["containers"]
+    assert "database__graph_url" in secret_keys(migrate)
+    assert "database__graph_url" not in secret_keys(main)

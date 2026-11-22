@@ -25,3 +25,27 @@ exclude = ["^var/"]
 [[tool.mypy.overrides]]
 module = ["pynvml"]
 ignore_missing_imports = true  # NVIDIA ships no type information
+
+# Module boundaries (ARCHITECTURE §5, criterion 2.10). Checked by test/test_architecture.py.
+# Every top-level package under src/ must appear in the contracts below (the test enforces it).
+[tool.importlinter]
+root_package = "src"
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "Only src.agents imports LangGraph (and its LangChain/LangSmith dependencies)"
+type = "forbidden"
+source_modules = ["src.core", "src.api", "src.resources"]
+forbidden_modules = ["langgraph", "langchain_core", "langsmith"]
+
+[[tool.importlinter.contracts]]
+name = "The job library stays behind the dispatch layer"
+type = "forbidden"
+source_modules = ["src.core", "src.api", "src.agents", "src.resources"]
+forbidden_modules = ["procrastinate"]
+
+[[tool.importlinter.contracts]]
+name = "src.core depends on no other lab package"
+type = "forbidden"
+source_modules = ["src.core"]
+forbidden_modules = ["src.api", "src.agents", "src.resources"]

@@ -36,6 +36,7 @@ class ScratchDatabase:
     name: str
     app_url: str  # least-privilege application role
     owner_url: str  # schema owner (migrations)
+    graph_url: str  # LangGraph checkpointer role, confined to schema langgraph
     admin_url: str  # superuser on this database: ONLY for tests that must bypass protections
 
 
@@ -46,6 +47,7 @@ def make_database() -> Iterator[Callable[[], ScratchDatabase]]:
     admin_template = make_url(admin_url)
     app_template = make_url(_require_env("LAB_DATABASE__URL"))
     owner_template = make_url(_require_env("LAB_DATABASE__MIGRATION_URL"))
+    graph_template = make_url(_require_env("LAB_DATABASE__GRAPH_URL"))
     created: list[str] = []
 
     def _make() -> ScratchDatabase:
@@ -54,11 +56,13 @@ def make_database() -> Iterator[Callable[[], ScratchDatabase]]:
             conn.execute(f'CREATE DATABASE "{name}"')
             conn.execute(f'GRANT CREATE ON DATABASE "{name}" TO lab_owner')
             conn.execute(f'GRANT CONNECT ON DATABASE "{name}" TO lab_app')
+            conn.execute(f'GRANT CONNECT ON DATABASE "{name}" TO lab_graph')
         created.append(name)
         return ScratchDatabase(
             name=name,
             app_url=app_template.set(database=name).render_as_string(hide_password=False),
             owner_url=owner_template.set(database=name).render_as_string(hide_password=False),
+            graph_url=graph_template.set(database=name).render_as_string(hide_password=False),
             admin_url=admin_template.set(database=name).render_as_string(hide_password=False),
         )
 
@@ -79,7 +83,9 @@ def migrated_db(make_database: Callable[[], ScratchDatabase]) -> ScratchDatabase
 def settings_for(db: ScratchDatabase) -> Settings:
     return Settings(
         env="test",
-        database=DatabaseSettings(url=db.app_url, migration_url=db.owner_url),
+        database=DatabaseSettings(
+            url=db.app_url, migration_url=db.owner_url, graph_url=db.graph_url
+        ),
     )
 
 

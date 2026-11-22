@@ -389,6 +389,9 @@ design targets 40–60+ roles. The number of roles does not affect the number of
 - optional review gates per project;
 - any step that would send `confidential` data to an external provider.
 
+On resume, the interrupted node runs again from its beginning, so code before `interrupt()` must
+be idempotent (DECISIONS C-5). The approval request is therefore an upsert keyed by its task.
+
 The interrupt payload is stored in the domain table `approvals` and shown in the dashboard. The
 user's answer resumes the thread with `Command(resume=…)` through a resume job. Interrupted runs
 hold no runner while they wait.
@@ -397,18 +400,22 @@ hold no runner while they wait.
 
 | Action | Mechanism | Resulting status |
 |---|---|---|
-| **Pause** (graceful) | `research_runs.pause_requested`; a guard checked at the entry of every node calls `interrupt()`, so the graph suspends at a clean boundary with its checkpoint saved | `paused` |
+| **Pause** (graceful) | `research_runs.pause_requested` + `NOTIFY lab_control` → the runner that owns the run calls LangGraph's `RunControl.request_drain()`. The run stops after the current node with its checkpoint saved (DECISIONS C-1) | `paused` |
 | **Resume** | enqueue a resume job for the thread | continues from the last checkpoint |
 | **Stop** (hard) | `cancel_requested` + `NOTIFY lab_control` → the runner cancels the asyncio task running `graph.ainvoke`; in-flight HTTP calls to models and sources are cancelled with it | `cancel_requested`, then `stopped` once the runner confirms (or once its heartbeat expires because it is dead) |
 | **Kill switch** | `system_state.kill_switch` stored in the database (survives restarts) | runners cancel all runs, dispatch is refused, CronJob ticks enqueue nothing |
 
 The dashboard shows `cancel_requested` and `stopped` as different states.
 
-**Target:** a running node stops within 10 s. This is measured in Phase 2 tests.
+**Target:** a running node stops within 10 s. This is measured in Phase 2 tests. The spike
+measured under 1 s, but only for async code. A synchronous node keeps running in its thread after
+cancellation, so all nodes, tools and gateways are async (DECISIONS C-2).
 
 ### 6.7. Durability semantics on resume
-LangGraph checkpoints at super-step boundaries. A node that was running when a process died will
-**re-execute from its start** on resume. Our design makes that safe:
+LangGraph checkpoints at super-step boundaries. Every run is invoked with `durability="sync"`,
+so a step's checkpoint is written before the next step starts (DECISIONS C-4). A node that was
+running when a process died will **re-execute from its start** on resume. Our design makes that
+safe:
 - Agent nodes are idempotent through `agent_tasks` keys (§6.3 step 2).
 - Model calls are cached by `(agent_task, call_seq)`, so a re-executed node never pays twice for a
   completed call.
@@ -416,8 +423,9 @@ LangGraph checkpoints at super-step boundaries. A node that was running when a p
 - The interrupted attempt is recorded as `abandoned` on `agent_task_attempts`. It is never silently
   erased.
 
-Whether LangGraph preserves the completed parallel branches of a partially failed super-step, and
-how this interacts with interrupts, is an assumption that must be verified (A-3 in §16).
+The spike confirmed (A-3) that completed parallel branches are kept after a crash or a sibling's
+failure. A branch that fails while siblings are still running cancels them, and those siblings run
+again on resume. Branch work must therefore be idempotent too.
 
 ---
 
@@ -432,7 +440,10 @@ how this interacts with interrupts, is an assumption that must be verified (A-3 
 | **Dispatch and messaging** | "Which process should execute run X now? What runs periodically? Who must be notified of a change?" | job library + LISTEN/NOTIFY | PostgreSQL schema `jobs` | completed jobs pruned after N days |
 
 All three can share **one lab-owned PostgreSQL instance** in separate schemas, with separate
-database roles where the libraries allow it. One backup then captures a consistent state of
+database roles where the libraries allow it. The libraries do not qualify their table names, so
+each connection sets its own `search_path`: the checkpointer connects as `lab_graph` with
+`search_path=langgraph`, and Procrastinate uses `search_path=jobs` (DECISIONS C-6). All three
+schemas are created by `scripts.migrate` (C-7). One backup then captures a consistent state of
 everything. Each concern can move to its own instance later without code changes (its connection
 string is configuration).
 
@@ -846,7 +857,7 @@ and the ResourceQuota forbids NodePorts and LoadBalancers outright.
 
 | Scenario | Recovery |
 |---|---|
-| Process crash | Kubernetes restarts the pod (liveness probe); dead runner detected by heartbeat; its jobs are retried; the run resumes from its checkpoint (§6.7) |
+| Process crash | Kubernetes restarts the pod (liveness probe). A dead runner is detected by its expired heartbeat; the stalled-job reaper (DECISIONS C-3) retries its jobs and marks its open attempts `abandoned`; the run resumes from its checkpoint (§6.7). Until then, the run's lock keeps every other runner off that thread |
 | Host or power loss | k3s and the pods restart with the host; PostgreSQL WAL recovery; interrupted attempts marked `abandoned`; runs resumed automatically unless the kill switch is set |
 | Data loss | Phase 1: daily `pg_dump` of all three schemas + blob store, rotated, with the audit head hash. Phase 7: WAL archiving (PITR), off-host copy, weekly automated restore test into a scratch database followed by `python -m scripts.verify_events`. **A backup that has never been restored counts as no backup.** |
 | Checkpoint store loss | domain record intact; affected runs marked `checkpoint_lost` and restartable, reusing completed tasks |
@@ -874,8 +885,8 @@ Each assumption gets an automated test before the dependent design is built on i
 the design is revised and the user is told.
 
 **Results (2026-11-22):** see [SPIKE_2A_FINDINGS.md](SPIKE_2A_FINDINGS.md). A-1 to A-8 hold, with
-A-5 holding only for async nodes. A-9 (graceful pause via `RunControl`) was added. The design
-changes C-1 to C-8 proposed there are applied to this document only after the owner approves them.
+A-5 holding only for async nodes. A-9 (graceful pause via `RunControl`) was added. The owner
+approved go and design changes C-1 to C-8 (DECISIONS); they are applied in §6.5–§6.7, §7.1 and §14.
 
 | ID | Assumption | Test |
 |---|---|---|

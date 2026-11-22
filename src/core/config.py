@@ -47,11 +47,15 @@ class DatabaseSettings(_Section):
     migration_url: SecretStr | None = None
     # Role that receives DML grants from migrations. Must match the role in `url`.
     app_role: str = Field(default="lab_app", pattern=r"^[a-z_][a-z0-9_]{0,62}$")
+    # LangGraph checkpointer: its own role, confined to schema `langgraph` (DECISIONS C-6).
+    # Needed by the runner and by `scripts.migrate` (checkpointer setup); the api never uses it.
+    graph_url: SecretStr | None = None
+    graph_role: str = Field(default="lab_graph", pattern=r"^[a-z_][a-z0-9_]{0,62}$")
     pool_size: int = Field(default=10, ge=1, le=200)
     pool_timeout_s: float = Field(default=10.0, gt=0)
     statement_timeout_ms: int = Field(default=30_000, ge=100)
 
-    @field_validator("url", "migration_url")
+    @field_validator("url", "migration_url", "graph_url")
     @classmethod
     def _must_be_postgres(cls, v: SecretStr | None) -> SecretStr | None:
         if v is not None and not v.get_secret_value().startswith("postgresql+psycopg://"):

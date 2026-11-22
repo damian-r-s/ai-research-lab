@@ -20,7 +20,7 @@ S = "lab"
 TS = sa.TIMESTAMP(timezone=True)
 
 
-def upgrade(app_role: str) -> None:
+def upgrade(app_role: str, **_: str) -> None:
     op.create_table(
         "users",
         sa.Column("id", pg.UUID(as_uuid=True), primary_key=True),
@@ -147,7 +147,7 @@ def upgrade(app_role: str) -> None:
     )
 
 
-def downgrade(app_role: str) -> None:
+def downgrade(app_role: str, **_: str) -> None:
     op.drop_table("events", schema=S)  # drops its triggers
     op.execute(f"DROP FUNCTION {S}.forbid_mutation()")
     op.drop_table("login_attempts", schema=S)

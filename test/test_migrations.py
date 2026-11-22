@@ -19,6 +19,17 @@ from test.conftest import ScratchDatabase
 pytestmark = pytest.mark.integration
 
 FOUNDATION_TABLES = {"users", "auth_sessions", "login_attempts", "events"}
+RUN_TABLES = {
+    "system_state",
+    "runners",
+    "budgets",
+    "budget_ledger",
+    "research_runs",
+    "agent_tasks",
+    "agent_task_attempts",
+    "approvals",
+}
+LAB_TABLES = FOUNDATION_TABLES | RUN_TABLES
 
 
 def _plain(url: str) -> str:
@@ -29,6 +40,14 @@ def _lab_tables(db: ScratchDatabase) -> set[str]:
     with psycopg.connect(_plain(db.owner_url)) as conn:
         rows = conn.execute("SELECT tablename FROM pg_tables WHERE schemaname = %s", (SCHEMA,))
         return {r[0] for r in rows} - {"alembic_version"}
+
+
+def _schemas(db: ScratchDatabase) -> set[str]:
+    with psycopg.connect(_plain(db.owner_url)) as conn:
+        rows = conn.execute(
+            "SELECT nspname FROM pg_namespace WHERE nspname IN ('jobs', 'langgraph')"
+        )
+        return {r[0] for r in rows}
 
 
 def _event_triggers(db: ScratchDatabase) -> set[str]:
@@ -52,14 +71,17 @@ def test_upgrade_downgrade_upgrade_round_trip(
     db = make_database()
 
     upgrade("head", url=db.owner_url, app_role="lab_app")
-    assert _lab_tables(db) == FOUNDATION_TABLES
+    assert _lab_tables(db) == LAB_TABLES
+    assert _schemas(db) == {"jobs", "langgraph"}
     assert _event_triggers(db) == {"events_append_only", "events_no_truncate"}
 
     downgrade("base", url=db.owner_url, app_role="lab_app")
     assert _lab_tables(db) == set()
+    assert _schemas(db) == set()
 
     upgrade("head", url=db.owner_url, app_role="lab_app")
-    assert _lab_tables(db) == FOUNDATION_TABLES
+    assert _lab_tables(db) == LAB_TABLES
+    assert _schemas(db) == {"jobs", "langgraph"}
     assert _event_triggers(db) == {"events_append_only", "events_no_truncate"}
 
 

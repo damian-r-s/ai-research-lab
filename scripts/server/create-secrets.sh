@@ -21,13 +21,17 @@ pw() { head -c 32 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 40; }
 pw > "$dir/superuser-password"
 pw > "$dir/owner-password"
 pw > "$dir/app-password"
+pw > "$dir/graph-password"
 printf 'postgresql+psycopg://lab_app:%s@postgres:5432/lab' "$(cat "$dir/app-password")" > "$dir/database__url"
 printf 'postgresql+psycopg://lab_owner:%s@postgres:5432/lab' "$(cat "$dir/owner-password")" > "$dir/database__migration_url"
+printf 'postgresql+psycopg://lab_graph:%s@postgres:5432/lab' "$(cat "$dir/graph-password")" > "$dir/database__graph_url"
 kubectl -n "$ns" create secret generic lab-secrets \
   --from-file=superuser-password="$dir/superuser-password" \
   --from-file=owner-password="$dir/owner-password" \
   --from-file=app-password="$dir/app-password" \
+  --from-file=graph-password="$dir/graph-password" \
   --from-file=database__url="$dir/database__url" \
-  --from-file=database__migration_url="$dir/database__migration_url" >/dev/null
+  --from-file=database__migration_url="$dir/database__migration_url" \
+  --from-file=database__graph_url="$dir/database__graph_url" >/dev/null
 kubectl -n "$ns" label secret lab-secrets app.kubernetes.io/part-of=ai-research-lab >/dev/null
-echo "created secret lab-secrets in $ns (5 keys; values not shown)"
+echo "created secret lab-secrets in $ns (7 keys; values not shown)"

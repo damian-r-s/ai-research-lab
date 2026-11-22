@@ -24,15 +24,18 @@ CONF
     psql -h "$LAB_PGHOST" -p "$LAB_PGPORT" -U lab_admin -d postgres -tAc \
       "SELECT 1 FROM pg_database WHERE datname='lab'" | grep -q 1 || \
       createdb -h "$LAB_PGHOST" -p "$LAB_PGPORT" -U lab_admin lab
-    # Least-privilege roles: lab_owner owns the schema and runs migrations,
-    # lab_app is what the running application uses (DML only, no DDL).
+    # Least-privilege roles: lab_owner owns the schemas and runs migrations,
+    # lab_app is what the running application uses (DML only, no DDL),
+    # lab_graph is the LangGraph checkpointer, confined to schema langgraph (DECISIONS C-6).
     psql -q -h "$LAB_PGHOST" -p "$LAB_PGPORT" -U lab_admin -d lab -v ON_ERROR_STOP=1 <<SQL
 DO \$\$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='lab_owner') THEN CREATE ROLE lab_owner LOGIN; END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='lab_app')   THEN CREATE ROLE lab_app LOGIN;   END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='lab_graph') THEN CREATE ROLE lab_graph LOGIN; END IF;
 END \$\$;
 GRANT CREATE ON DATABASE lab TO lab_owner;
 GRANT CONNECT ON DATABASE lab TO lab_app;
+GRANT CONNECT ON DATABASE lab TO lab_graph;
 SQL
     ;;
   stop)   pg_ctl -D "$LAB_PGDATA" -m fast stop ;;

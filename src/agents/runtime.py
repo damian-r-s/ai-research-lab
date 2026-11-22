@@ -4,6 +4,7 @@
 |---|---|
 | finished | `completed` |
 | `GraphDrained` (pause, DECISIONS C-1) | `paused`; nothing holds a runner while paused |
+| `GraphDrained` (runner shutdown) | `queued` again, with a new job: another runner continues |
 | pending interrupts (approval) | `awaiting_approval`; nothing holds a runner while waiting |
 | the asyncio task is cancelled (stop) | `stopped`, if a stop was requested |
 | an exception | `failed`, with the error |
@@ -40,6 +41,7 @@ from src.core.errors import NotFound
 from src.core.events.store import Actor, EventContext
 from src.core.logging import get_logger
 from src.runs import approvals, service
+from src.runs.dispatch import Dispatcher
 
 log = get_logger(__name__)
 
@@ -52,6 +54,7 @@ class Outcome(enum.StrEnum):
     AWAITING_APPROVAL = "awaiting_approval"
     STOPPED = "stopped"
     FAILED = "failed"
+    REQUEUED = "requeued"  # drained for a runner shutdown; another runner continues
     SKIPPED = "skipped"  # the run was not queued when this execution picked it up
 
 
@@ -60,8 +63,9 @@ def _pending_interrupts(snapshot: Any) -> list[Interrupt]:
 
 
 class RunExecution:
-    """One execution of one run. The runner (2b.4) calls `request_pause()` on a pause request and
-    cancels the task running `execute()` on a stop."""
+    """One execution of one run. The runner calls `request_pause()` on a pause request,
+    `request_shutdown()` when it is shutting down, and cancels the task running `execute()` on a
+    stop."""
 
     def __init__(
         self,
@@ -70,8 +74,10 @@ class RunExecution:
         factory: async_sessionmaker[AsyncSession],
         checkpointer: BaseCheckpointSaver[Any],
         runner_id: uuid.UUID | None = None,
+        dispatcher: Dispatcher | None = None,
     ) -> None:
         self.run_id = run_id
+        self._dispatcher = dispatcher
         self._factory = factory
         self._checkpointer = checkpointer
         self._runner_id = runner_id
@@ -83,6 +89,10 @@ class RunExecution:
     def request_pause(self) -> None:
         """Stop after the node that is running now, with its checkpoint saved (C-1)."""
         self._control.request_drain("pause")
+
+    def request_shutdown(self) -> None:
+        """Stop after the current node and hand the run back to the queue (runner shutdown)."""
+        self._control.request_drain("shutdown")
 
     async def _claim(self) -> tuple[str, str, str, dict[str, Any]] | None:
         async with session_scope(self._factory) as session:
@@ -101,11 +111,21 @@ class RunExecution:
                 Outcome.PAUSED,
                 Outcome.AWAITING_APPROVAL,
                 Outcome.STOPPED,
+                Outcome.REQUEUED,
             }:
-                outcome = Outcome.STOPPED  # a stop wins over a pause or an approval wait
+                outcome = Outcome.STOPPED  # a stop wins over a pause, an approval or a hand-back
             elif outcome is Outcome.STOPPED:
-                # Cancelled without a stop request (for example a runner shutdown): leave the run
-                # as it is; recovery requeues it (2b.4).
+                # Cancelled without a stop request (the runner's shutdown timeout expired): leave
+                # the run as it is; the stalled-job reaper requeues it (C-3).
+                return outcome
+            elif outcome is Outcome.REQUEUED:
+                if self._dispatcher is None:
+                    raise RuntimeError("a requeue needs a dispatcher")
+                run.runner_id = None
+                await service.transition(
+                    session, run, "queued", context=self._actor, reason="runner shutdown"
+                )
+                await self._dispatcher.enqueue_run(session, run_id=run.id, thread_id=run.thread_id)
                 return outcome
             if error:
                 run.error = error
@@ -153,6 +173,8 @@ class RunExecution:
                 control=self._control,
             )
         except GraphDrained:
+            if self._control.drain_reason == "shutdown":
+                return await self._finish(Outcome.REQUEUED)
             return await self._finish(Outcome.PAUSED)
         except asyncio.CancelledError:
             await asyncio.shield(self._finish(Outcome.STOPPED))

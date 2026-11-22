@@ -149,6 +149,8 @@ class ResearchRun(Base):
     created_at: Mapped[datetime] = mapped_column(nullable=False)
     started_at: Mapped[datetime | None] = mapped_column()
     ended_at: Mapped[datetime | None] = mapped_column()
+    # When this finished run's checkpoints were pruned to the latest one (criterion 2.11).
+    checkpoints_pruned_at: Mapped[datetime | None] = mapped_column()
     version: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
 
 

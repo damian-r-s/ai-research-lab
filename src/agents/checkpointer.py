@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
+from datetime import timedelta
 from typing import Any
 
 import psycopg
@@ -15,11 +16,19 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from psycopg import sql
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from src.core.clock import utcnow
 from src.core.config import DatabaseSettings
-from src.core.databases.database import libpq_url
+from src.core.databases.database import libpq_url, session_scope
+from src.core.databases.models.runs import ResearchRun
+from src.runs.states import TERMINAL
 
 CHECKPOINT_SCHEMA = "langgraph"
+
+# The checkpointer type, for code outside src.agents (which must not import LangGraph).
+Checkpointer = AsyncPostgresSaver
 
 
 def _graph_dsn(settings: DatabaseSettings) -> str:
@@ -78,3 +87,42 @@ async def open_checkpointer(
         yield AsyncPostgresSaver(pool)
     finally:
         await pool.close()
+
+
+async def prune_finished_runs(
+    saver: AsyncPostgresSaver,
+    factory: async_sessionmaker[AsyncSession],
+    *,
+    older_than: timedelta,
+    batch: int = 100,
+) -> int:
+    """Reduce the checkpoints of runs finished longer than `older_than` ago to the latest one.
+
+    The domain record is never touched apart from `checkpoints_pruned_at` (criterion 2.11), and
+    the final state stays readable. Returns how many runs were pruned.
+    """
+    cutoff = utcnow() - older_than
+    async with factory() as session:
+        runs = (
+            await session.scalars(
+                select(ResearchRun)
+                .where(
+                    ResearchRun.status.in_(TERMINAL),
+                    ResearchRun.ended_at < cutoff,
+                    ResearchRun.checkpoints_pruned_at.is_(None),
+                )
+                .order_by(ResearchRun.ended_at)
+                .limit(batch)
+            )
+        ).all()
+        threads = {r.id: r.thread_id for r in runs}
+    if not threads:
+        return 0
+    await saver.aprune(list(threads.values()), strategy="keep_latest")
+    async with session_scope(factory) as session:
+        await session.execute(
+            update(ResearchRun)
+            .where(ResearchRun.id.in_(list(threads)))
+            .values(checkpoints_pruned_at=utcnow())
+        )
+    return len(threads)

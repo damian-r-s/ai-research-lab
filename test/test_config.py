@@ -168,3 +168,17 @@ def test_missing_secrets_directory_is_an_error(
     monkeypatch.setenv("LAB_SECRETS_DIR", str(tmp_path / "does-not-exist"))
     with pytest.raises(Exception, match="does-not-exist"):
         load()
+
+
+@pytest.mark.parametrize(
+    ("values", "message"),
+    [
+        ({"reaper_interval_s": 7}, "must divide 60"),
+        ({"heartbeat_interval_s": 10, "stall_timeout_s": 15}, "twice the heartbeat"),
+    ],
+)
+def test_runner_settings_reject_unsafe_timing(values: dict[str, float], message: str) -> None:
+    from src.core.config import RunnerSettings
+
+    with pytest.raises(ValueError, match=message):
+        RunnerSettings(**values)

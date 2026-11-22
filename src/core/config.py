@@ -110,6 +110,31 @@ class ResourceSettings(_Section):
     expect_gpu: bool = False
 
 
+class RunnerSettings(_Section):
+    """Runner processes (ARCHITECTURE §3.2, DECISIONS C-3)."""
+
+    concurrency: int = Field(default=4, ge=1, le=64)  # runs executed at once per runner
+    heartbeat_interval_s: float = Field(default=5.0, gt=0, le=60)
+    # A runner (and its jobs) is considered dead after this long without a heartbeat.
+    stall_timeout_s: float = Field(default=30.0, gt=0, le=3600)
+    # How often the stalled-job reaper runs (a divisor of 60: it is a seconds cron field).
+    reaper_interval_s: int = Field(default=15, ge=1, le=60)
+    # Backup for missed NOTIFY messages: how often a runner re-reads its runs' control flags.
+    control_poll_interval_s: float = Field(default=5.0, gt=0, le=60)
+    # On shutdown, runs are drained and handed back; after this, still-running nodes are cut off.
+    shutdown_timeout_s: float = Field(default=25.0, gt=0, le=600)
+    checkpoint_retention_days: float = Field(default=7.0, ge=0)
+    prune_cron: str = "17 * * * *"
+
+    @model_validator(mode="after")
+    def _consistent(self) -> RunnerSettings:
+        if 60 % self.reaper_interval_s:
+            raise ValueError("runner.reaper_interval_s must divide 60")
+        if self.stall_timeout_s < 2 * self.heartbeat_interval_s:
+            raise ValueError("runner.stall_timeout_s must be at least twice the heartbeat interval")
+        return self
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="LAB_",
@@ -126,6 +151,7 @@ class Settings(BaseSettings):
     api: ApiSettings = ApiSettings()
     logging: LoggingSettings = LoggingSettings()
     resources: ResourceSettings = ResourceSettings()
+    runner: RunnerSettings = RunnerSettings()
 
     @model_validator(mode="after")
     def _server_guards(self) -> Settings:

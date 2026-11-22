@@ -13,7 +13,7 @@ from src.core.config import REPO_ROOT
 
 # Packages allowed to import LangGraph or the job library, and therefore absent from those
 # contracts' source lists. Everything else under src/ must be listed (checked below).
-LANGGRAPH_ALLOWED = {"src.agents", "src.services"}
+LANGGRAPH_ALLOWED = {"src.agents"}
 JOBS_ALLOWED = {"src.runs", "src.services"}
 
 
@@ -45,8 +45,10 @@ def test_import_contracts_are_kept() -> None:
 )
 def test_every_package_is_covered_by_the_contracts(forbidden: str, allowed: set[str]) -> None:
     """A new package under src/ must be placed explicitly: restricted, or allowed above."""
-    contract = next(c for c in contracts() if forbidden in c["forbidden_modules"])  # type: ignore[operator]
-    restricted = set(contract["source_modules"])  # type: ignore[call-overload]
+    restricted: set[str] = set()
+    for contract in contracts():
+        if forbidden in contract["forbidden_modules"]:  # type: ignore[operator]
+            restricted |= set(contract["source_modules"])  # type: ignore[call-overload]
     assert top_level_packages() - allowed == restricted
 
 

@@ -33,10 +33,17 @@ root_package = "src"
 include_external_packages = true
 
 [[tool.importlinter.contracts]]
-name = "Only src.agents imports LangGraph (and its LangChain/LangSmith dependencies)"
+name = "The domain never loads LangGraph, not even indirectly"
 type = "forbidden"
-source_modules = ["src.core", "src.api", "src.resources", "src.runs"]
+source_modules = ["src.core", "src.resources", "src.runs"]
 forbidden_modules = ["langgraph", "langchain_core", "langsmith"]
+
+[[tool.importlinter.contracts]]
+name = "Entry points use LangGraph only through src.agents"
+type = "forbidden"
+source_modules = ["src.api", "src.services"]
+forbidden_modules = ["langgraph", "langchain_core", "langsmith"]
+allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
 name = "The job library stays behind the dispatch layer"
@@ -50,10 +57,10 @@ allow_indirect_imports = true
 name = "src.core depends on no other lab package"
 type = "forbidden"
 source_modules = ["src.core"]
-forbidden_modules = ["src.api", "src.agents", "src.resources", "src.runs"]
+forbidden_modules = ["src.api", "src.agents", "src.resources", "src.runs", "src.services"]
 
 [[tool.importlinter.contracts]]
 name = "The run lifecycle does not depend on the API or the graph runtime"
 type = "forbidden"
 source_modules = ["src.runs"]
-forbidden_modules = ["src.api", "src.agents"]
+forbidden_modules = ["src.api", "src.agents", "src.services"]

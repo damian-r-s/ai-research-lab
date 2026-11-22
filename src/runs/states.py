@@ -1,6 +1,7 @@
 """The run status machine. Every allowed transition is listed; anything else is a conflict.
 
     queued ──► running ──► completed | failed
+      │          │ ├──► queued (handed back: runner shutdown, or its runner died)
       │          │ ├──► paused (drained after a pause request)
       │          │ ├──► awaiting_approval (interrupt)
       │          │ └──► cancel_requested ──► stopped (runner confirms) | completed | failed
@@ -31,7 +32,7 @@ TERMINAL: Final[frozenset[str]] = frozenset({"stopped", "completed", "failed"})
 TRANSITIONS: Final[dict[str, frozenset[str]]] = {
     "queued": frozenset({"running", "paused", "stopped", "failed"}),
     "running": frozenset(
-        {"paused", "awaiting_approval", "cancel_requested", "completed", "failed"}
+        {"queued", "paused", "awaiting_approval", "cancel_requested", "completed", "failed"}
     ),
     "paused": frozenset({"queued", "stopped"}),
     "awaiting_approval": frozenset({"queued", "stopped"}),

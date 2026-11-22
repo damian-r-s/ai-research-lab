@@ -114,8 +114,8 @@ C-8 (DECISIONS).** Findings are in
 | 2b.1 | Runtime dependencies; `lab_graph` role (dev, k3s init, secrets); schemas `jobs` and `langgraph` and the Phase 2 domain tables via `scripts.migrate` (C-6, C-7); backups can read checkpoints; import-linter boundaries | 2.10 | ✅ 22 new tests pass (2026-11-22); backend suite 203, browser tests 12. Runner settings move to 2b.4, where they are first used |
 | 2b.2 | Run lifecycle service (`src/runs`, framework-free): start, pause, resume, stop, kill switch; status machine; audit events; transactional dispatch | 2.4, 2.5 (service part) | ✅ 23 tests pass (2026-11-22); backend suite 226 |
 | 2b.3 | Graph runtime (`src/agents`): executor with `durability="sync"`, drain-based pause, cancellation, idempotent task records and attempts, approvals via `interrupt()`, bounded loops, async-only check (C-1, C-2, C-4, C-5) | 2.5, 2.6, 2.9 | ✅ 17 tests pass (2026-11-22); backend suite 243. Multi-process hand-over and `kill -9` follow in 2b.4 |
-| 2b.4 | Runner process (`src/services/runner.py`): Procrastinate worker, runner heartbeats, control channel, stalled-job reaper (C-3), checkpoint pruning | 2.2, 2.3, 2.4, 2.11 | ⬜ next |
-| 2b.5 | Limits and budgets: time, attempts, parallelism, retries (C-8); `blocked_budget` with an approval request | 2.7, 2.8 | ⬜ |
+| 2b.4 | Runner process (`src/services/runner.py`): Procrastinate worker, runner heartbeats, control channel, stalled-job reaper (C-3), checkpoint pruning | 2.2, 2.3, 2.4, 2.11 | ✅ 11 tests pass (2026-11-22), 9 of them with real runner processes (`kill -9`, SIGTERM, two runners); backend suite 254 |
+| 2b.5 | Limits and budgets: time, attempts, parallelism, retries (C-8); `blocked_budget` with an approval request | 2.7, 2.8 | ⬜ next |
 | 2b.6 | API and dashboard: runs and tasks views, approvals, control buttons wired to real effects; browser tests | 2.4–2.6 (UI part) | ⬜ |
 | 2b.7 | k3s: runner Deployment, network policy and quota updates; first server deployment with Phase 1 | 2.12 | ⬜ |
 

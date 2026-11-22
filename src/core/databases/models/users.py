@@ -4,31 +4,14 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from enum import StrEnum
 
 from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Index, Text
 from sqlalchemy.dialects.postgresql import INET, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.core.databases.base import Base
+from src.core.security import Role
 
-
-class Role(StrEnum):
-    """Ordered from least to most privileged."""
-
-    viewer = "viewer"
-    researcher = "researcher"
-    admin = "admin"
-
-    @property
-    def rank(self) -> int:
-        return _RANK[self]
-
-    def satisfies(self, required: Role) -> bool:
-        return self.rank >= required.rank
-
-
-_RANK = {Role.viewer: 0, Role.researcher: 1, Role.admin: 2}
 _ROLES_SQL = ", ".join(f"'{r.value}'" for r in Role)
 
 

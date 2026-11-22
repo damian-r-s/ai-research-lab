@@ -94,3 +94,51 @@ async def app_engine(migrated_db: ScratchDatabase) -> AsyncIterator[AsyncEngine]
 @pytest.fixture
 def session_factory(app_engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
     return create_session_factory(app_engine)
+
+
+@pytest.fixture
+def fresh_db(make_database: Callable[[], ScratchDatabase]) -> ScratchDatabase:
+    """A private, migrated database for tests that count rows or modify shared state."""
+    db = make_database()
+    upgrade("head", url=db.owner_url, app_role="lab_app")
+    return db
+
+
+PASSWORD = "correct horse battery staple"
+
+
+def make_user(
+    db: ScratchDatabase, username: str, role: str = "viewer", password: str = PASSWORD
+) -> None:
+    """Create a user through the real service (hashing, validation, audit event)."""
+    import asyncio
+
+    from src.core.auth.service import create_user
+    from src.core.events.store import Actor, EventContext
+    from src.core.security import Role
+
+    async def _run() -> None:
+        engine = create_engine(settings_for(db).database)
+        try:
+            async with create_session_factory(engine)() as session:
+                await create_user(
+                    session,
+                    username=username,
+                    password=password,
+                    role=Role(role),
+                    context=EventContext(Actor.system("test-suite")),
+                )
+                await session.commit()
+        finally:
+            await engine.dispose()
+
+    asyncio.run(_run())
+
+
+def sql(url: str, statement: str, params: tuple[object, ...] = ()) -> list[tuple[object, ...]]:
+    """Run one statement synchronously (owner or admin URL) and return its rows, if any."""
+    with psycopg.connect(url.replace("postgresql+psycopg://", "postgresql://", 1)) as conn:
+        cur = conn.execute(statement, params)
+        rows = cur.fetchall() if cur.description else []
+        conn.commit()
+        return rows

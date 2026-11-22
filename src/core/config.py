@@ -76,6 +76,8 @@ class ApiSettings(_Section):
     port: int = Field(default=8000, ge=1, le=65535)
     # Header that state-changing requests must carry (custom-header CSRF defence).
     csrf_header: str = "X-Lab-CSRF"
+    # SSE: idle keep-alive interval; also how often a long-lived stream re-checks its session.
+    sse_keepalive_s: float = Field(default=15.0, ge=0.1, le=300)
 
 
 class LoggingSettings(_Section):

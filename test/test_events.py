@@ -8,7 +8,7 @@ import re
 import subprocess
 import sys
 import uuid
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator
 from datetime import datetime
 from typing import Any, LiteralString
 
@@ -20,7 +20,6 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from src.core.config import REPO_ROOT
 from src.core.databases.database import create_engine, create_session_factory
-from src.core.databases.migrate import upgrade
 from src.core.databases.models import Event
 from src.core.events import registry, store
 from src.core.events.hashing import canonical_bytes
@@ -43,14 +42,6 @@ CTX = EventContext(Actor.system("test-suite"), correlation_id="corr-1")
 
 def _plain(url: str) -> str:
     return url.replace("postgresql+psycopg://", "postgresql://", 1)
-
-
-@pytest.fixture
-def fresh_db(make_database: Callable[[], ScratchDatabase]) -> ScratchDatabase:
-    """A private, migrated database: tests here tamper with the chain or count rows."""
-    db = make_database()
-    upgrade("head", url=db.owner_url, app_role="lab_app")
-    return db
 
 
 @pytest_asyncio.fixture

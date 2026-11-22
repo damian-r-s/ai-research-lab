@@ -44,10 +44,10 @@ Exit criterion: the user approves the architecture and the decisions marked *Nee
 | 1 | Project skeleton in the mirrored layout; draft moved in; app starts; migrations apply; smoke tests | ✅ 4/4 tests pass (2026-11-22) |
 | 2 | Config, logging and migrations (criteria 1.1–1.2) | ✅ 29 tests pass (2026-11-22); total suite 33 |
 | 3 | Audit log and stream engine (1.3–1.7, 1.13 engine part) | ✅ 28 tests pass (2026-11-22); total suite 61. The HTTP `/api/events/stream` endpoint moves to step 4 so it is protected by login from the start |
-| 4 | Login, sessions, roles (1.8–1.10); authenticated event list and SSE endpoints (1.13 HTTP part) | ⬜ |
+| 4 | Login, sessions, roles (1.8–1.10); authenticated event list and SSE endpoints (1.13 HTTP part) | ✅ 37 tests pass (2026-11-22); total suite 98 |
 | 5 | Health and resource monitoring (1.11–1.12, 1.14) | ⬜ |
 | 6 | Dashboard skeleton (1.15) | ⬜ |
-| 7 | k3s manifests and deploy script; server steps (1.16–1.19) | ⬜ |
+| 7 | k3s manifests and deploy script; server steps (1.16–1.19); decide whether to trust `X-Forwarded-For` from Traefik (otherwise login throttling sees the proxy's IP) | ⬜ |
 **Scope** (repository layout mirrors `agentic-trading-intelligence-platform`, ARCHITECTURE §5):
 - Restructure the existing draft into that layout (root `app.py`, `src/` package, `test/`).
 - Backend: FastAPI app, configuration with environment and hardware profiles, structured logging.
